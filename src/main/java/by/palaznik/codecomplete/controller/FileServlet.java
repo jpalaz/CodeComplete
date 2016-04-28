@@ -9,8 +9,11 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+
+import java.util.Base64;
 
 @WebServlet("/file")
 public class FileServlet extends HttpServlet {
@@ -19,12 +22,14 @@ public class FileServlet extends HttpServlet {
     protected synchronized void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         int num = Integer.valueOf(request.getParameter("num"));
         String hash = request.getParameter("checksum");
-        String data = request.getParameter("data");
+        String dataBase64 = request.getParameter("data");
         System.out.println(num);
 
         response.setContentType("application/json");
         response.setCharacterEncoding("utf-8");
         PrintWriter out = response.getWriter();
+
+        String data = new String(Base64.getDecoder().decode(dataBase64), StandardCharsets.UTF_8);
         if (checkHash(data, hash)) {
             out.print("OK");
         } else {

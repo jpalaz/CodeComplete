@@ -34,7 +34,7 @@ public class FileServletTest {
     public void doPostOk() throws Exception {
         when(request.getParameter("num")).thenReturn("2");
         when(request.getParameter("checksum")).thenReturn("74b87337454200d4d33f80c4663dc5e5");
-        when(request.getParameter("data")).thenReturn("aaaa");
+        when(request.getParameter("data")).thenReturn("YWFhYQ=="); // "aaaa"
 
         new FileServlet().doPost(request, response);
         writer.flush();
@@ -46,7 +46,7 @@ public class FileServletTest {
     public void doPostRepeat() throws Exception {
         when(request.getParameter("num")).thenReturn("1");
         when(request.getParameter("checksum")).thenReturn("74b87337454200d4d33f80c4663dc5e5");
-        when(request.getParameter("data")).thenReturn("aaab");
+        when(request.getParameter("data")).thenReturn("YWFhYg=="); // "aaab"
 
         new FileServlet().doPost(request, response);
         writer.flush();
