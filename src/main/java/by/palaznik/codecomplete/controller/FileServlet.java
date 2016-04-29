@@ -19,7 +19,7 @@ import java.util.Base64;
 public class FileServlet extends HttpServlet {
 
     @Override
-    protected synchronized void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+    protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
         int num = Integer.valueOf(request.getParameter("num"));
         String hash = request.getParameter("checksum");
         String dataBase64 = request.getParameter("data");
