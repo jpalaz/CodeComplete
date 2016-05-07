@@ -3,21 +3,18 @@ package by.palaznik.codecomplete.service;
 import by.palaznik.codecomplete.model.Chunk;
 import by.palaznik.codecomplete.model.ChunkHeader;
 import by.palaznik.codecomplete.model.ChunksReader;
+import by.palaznik.codecomplete.model.ChunksWriter;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.FileUtils;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
 public class FileService {
 
-    private static List<Chunk> buffer = new ArrayList<>();
+    private static List<Chunk> bufferedChunks = new ArrayList<>();
     private static List<ChunkHeader[]> chunksHeaders = new ArrayList<>();
 
     private static int count = 0;
@@ -25,7 +22,7 @@ public class FileService {
     private static int end = -1;
     private static int fileNumber = 0;
 
-    private static final int MAX_SIZE = 1_048_576 * 16; // 1 Mib //20_971_520;
+    private static final int MAX_SIZE = 1_048_576 * 16;
 
     public static boolean checkHash(Chunk chunk, String hash) {
         String dataHash = DigestUtils.md5Hex(chunk.getData());
@@ -39,13 +36,22 @@ public class FileService {
     }
 
     public static void addToBuffer(Chunk chunk) {
-        buffer.add(chunk);
+        bufferedChunks.add(chunk);
         count++;
         bytesSize += chunk.getData().length;
-        if (bytesSize >= MAX_SIZE || count - 1 == end) {
+        if (isFullBuffer() || isEndOfChunks()) {
+            bytesSize = 0;
             writeBuffer();
             mergeFiles();
         }
+    }
+
+    private static boolean isFullBuffer() {
+        return bytesSize >= MAX_SIZE;
+    }
+
+    private static boolean isEndOfChunks() {
+        return count - 1 == end;
     }
 
     private static void writeBuffer() {
@@ -57,21 +63,22 @@ public class FileService {
     }
 
     private static void writeToFile() throws IOException {
-        Collections.sort(buffer, (Chunk first, Chunk second) -> first.getNumber() - second.getNumber());
         BufferedOutputStream stream = new BufferedOutputStream(new FileOutputStream(fileNumber++ + ".txt"));
-        ChunkHeader[] headers = new ChunkHeader[buffer.size()];
+        ChunkHeader[] headers = writeChunks(stream);
         chunksHeaders.add(headers);
+        stream.close();
+    }
 
-        for (int i = 0; i < buffer.size(); i++) {
-            Chunk chunk = buffer.get(i);
+    private static ChunkHeader[] writeChunks(BufferedOutputStream stream) throws IOException {
+        ChunkHeader[] headers = new ChunkHeader[bufferedChunks.size()];
+        Collections.sort(bufferedChunks, (Chunk first, Chunk second) -> first.getNumber() - second.getNumber());
+        for (int i = 0; i < bufferedChunks.size(); i++) {
+            Chunk chunk = bufferedChunks.get(i);
             stream.write(chunk.getData());
             headers[i] = new ChunkHeader(chunk.getNumber(), chunk.getData().length);
         }
-
-//        System.out.print("Written file: " + (fileNumber - 1));
-        buffer.clear();
-        bytesSize = 0;
-        stream.close();
+        bufferedChunks.clear();
+        return headers;
     }
 
     private static void mergeFiles() {
@@ -85,74 +92,8 @@ public class FileService {
             merge(main, secondary);
             main.closeFile();
             secondary.closeFile();
-            FileUtils.deleteQuietly(new File((fileNumber - 1) + ".txt"));
-            FileUtils.deleteQuietly(new File((fileNumber - 2) + ".txt"));
-            fileNumber++;
-//            moveMergedFile();
+            deleteMergedFiles();
         }
-    }
-
-    private static void moveMergedFile() {
-        Path from = Paths.get("merged.txt");
-        Path to = Paths.get("0.txt");
-        try {
-            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private static void merge(ChunksReader main, ChunksReader secondary) {
-        try (BufferedOutputStream mergedStream = new BufferedOutputStream(new FileOutputStream(fileNumber + ".txt"))) {
-            int mergedLength = main.getChunksAmount() + secondary.getChunksAmount();
-            ChunkHeader[] mergedHeaders = new ChunkHeader[mergedLength];
-            int mergedIndex = 0;
-            int mainNumber = main.getCurrentNumber();
-            int secondaryNumber = secondary.getCurrentNumber();
-            boolean isMainSequence = true;
-            if (secondaryNumber < mainNumber) {
-                isMainSequence = false;
-            }
-            while (main.hasMoreChunks() || secondary.hasMoreChunks()) {
-                if (isMainSequence) {
-                    mergedIndex = main.writeChunkSequence(mergedHeaders, mergedIndex, mergedStream, secondaryNumber);
-                    mainNumber = main.getCurrentNumber();
-                } else {
-                    mergedIndex = secondary.writeChunkSequence(mergedHeaders, mergedIndex, mergedStream, mainNumber);
-                    secondaryNumber = secondary.getCurrentNumber();
-                }
-                isMainSequence = !isMainSequence;
-            }
-//            System.out.print(", size before: " + mergedHeaders.length);
-            mergedHeaders = combineChunksToClusters(mergedHeaders);
-//            System.out.println(", size after: " + mergedHeaders.length);
-            chunksHeaders.clear();
-            chunksHeaders.add(mergedHeaders);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private static ChunkHeader[] combineChunksToClusters(ChunkHeader[] headers) {
-        List<ChunkHeader> combinedHeaders = new ArrayList<>(headers.length);
-        for (int i = 0; i < headers.length; i++) {
-            if ((i < headers.length - 1) && isNeighbourClusters(headers[i], headers[i + 1])) {
-                int combinedSize = headers[i].getBytesAmount();
-                int startNumber = headers[i].getBeginNumber();
-                while ((i + 1 < headers.length) && isNeighbourClusters(headers[i], headers[i + 1])) {
-                    i++;
-                    combinedSize += headers[i].getBytesAmount();
-                }
-                combinedHeaders.add(new ChunkHeader(startNumber, headers[i].getEndNumber(), combinedSize));
-            } else {
-                combinedHeaders.add(headers[i]);
-            }
-        }
-        return combinedHeaders.toArray(new ChunkHeader[combinedHeaders.size()]);
-    }
-
-    private static boolean isNeighbourClusters(ChunkHeader leftHeader, ChunkHeader rightHeader) {
-        return leftHeader.getEndNumber() == rightHeader.getBeginNumber() - 1;
     }
 
     private static List<BufferedInputStream> getMergeFiles() {
@@ -164,5 +105,46 @@ public class FileService {
             e.printStackTrace();
         }
         return files;
+    }
+
+    private static void deleteMergedFiles() {
+        FileUtils.deleteQuietly(new File((fileNumber - 1) + ".txt"));
+        FileUtils.deleteQuietly(new File((fileNumber - 2) + ".txt"));
+        fileNumber++;
+    }
+
+    private static void merge(ChunksReader first, ChunksReader second) {
+        try (BufferedOutputStream mergedStream = new BufferedOutputStream(new FileOutputStream(fileNumber + ".txt"))) {
+            ChunkHeader[] mergedHeaders = getEmptyMergedHeaders(first, second);
+            mergeToFile(first, second, new ChunksWriter(mergedHeaders, mergedStream));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static ChunkHeader[] getEmptyMergedHeaders(ChunksReader main, ChunksReader secondary) {
+        int mergedLength = main.getChunksAmount() + secondary.getChunksAmount();
+        return new ChunkHeader[mergedLength];
+    }
+
+    private static void mergeToFile(ChunksReader first, ChunksReader second, ChunksWriter merged) throws IOException {
+        int firstNumber = first.getCurrentNumber();
+        int secondNumber = second.getCurrentNumber();
+        boolean isMainSequence = firstNumber < secondNumber;
+        byte[] chunks;
+        while (first.hasMoreChunks() || second.hasMoreChunks()) {
+            if (isMainSequence) {
+                chunks = first.readChunkSequence(merged, secondNumber);
+                firstNumber = first.getCurrentNumber();
+            } else {
+                chunks = second.readChunkSequence(merged, firstNumber);
+                secondNumber = second.getCurrentNumber();
+            }
+            merged.writeChunkSequence(chunks);
+            isMainSequence = !isMainSequence;
+        }
+        merged.combineChunksToClusters();
+        chunksHeaders.clear();
+        chunksHeaders.add(merged.getHeaders());
     }
 }

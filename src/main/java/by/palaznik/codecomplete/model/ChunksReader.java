@@ -1,22 +1,17 @@
 package by.palaznik.codecomplete.model;
 
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
 import java.io.IOException;
 
 public class ChunksReader {
     private int index;
     private ChunkHeader[] headers;
-    private BufferedInputStream file;
+    private BufferedInputStream stream;
 
-    public ChunksReader(ChunkHeader[] headers, BufferedInputStream file) {
+    public ChunksReader(ChunkHeader[] headers, BufferedInputStream stream) {
         this.index = 0;
         this.headers = headers;
-        this.file = file;
+        this.stream = stream;
     }
 
     public boolean hasMoreChunks() {
@@ -44,30 +39,28 @@ public class ChunksReader {
 
     public void closeFile() {
         try {
-            if (file != null) {
-                file.close();
+            if (stream != null) {
+                stream.close();
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public int writeChunkSequence(ChunkHeader[] mergedHeaders, int mergedIndex, BufferedOutputStream mergedStream, int upperBound) throws IOException {
+    public byte[] readChunkSequence(ChunksWriter merged, int upperBound) throws IOException {
         int bytesAmount = 0;
         do {
             bytesAmount += headers[index].getBytesAmount();
-            mergedHeaders[mergedIndex] = getCurrentHeader();
+            merged.addHeader(getCurrentHeader());
             increaseIndex();
-            mergedIndex++;
         } while (hasMoreSequenceChunks(upperBound));
-        copyBytesToMerged(mergedStream, bytesAmount);
-        return mergedIndex;
+        return readBytes(bytesAmount);
     }
 
-    private void copyBytesToMerged(BufferedOutputStream mergedStream, int bytesAmount) throws IOException {
-        byte[] bytesForChunks = new byte[bytesAmount];
-        file.read(bytesForChunks);
-        mergedStream.write(bytesForChunks);
+    private byte[] readBytes(int bytesAmount) throws IOException {
+        byte[] chunks = new byte[bytesAmount];
+        stream.read(chunks);
+        return chunks;
     }
 
     private boolean hasMoreSequenceChunks(int upperBound) {
