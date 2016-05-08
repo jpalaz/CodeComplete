@@ -89,6 +89,7 @@ public class FileService {
         while (chunksReaders.size() > 1) {
             mergeFiles();
         }
+        chunksReaders.get(0).renameFileToMerged();
     }
 
     private static void mergeFilesWithSameGenerations() {

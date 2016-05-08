@@ -62,7 +62,7 @@ public class FileServletTest {
     @Test
     public void sendChunksTest() throws Exception {
         int linesNumber = 1_00_000;
-        int[] numbers = getNumbers(linesNumber);
+        int[] numbers = getNumbers(linesNumber, true);
         numbers = getRandomNumbers(numbers);
         StringBuilder line = getAlphabetLine();
 
@@ -95,7 +95,7 @@ public class FileServletTest {
         return line;
     }
 
-    public static int[] getRandomNumbers(int[] numbers) {
+    private static int[] getRandomNumbers(int[] numbers) {
         Random random = new Random();
         for (int i = numbers.length - 1, j; i >= 0; --i) {
             j = random.nextInt(i + 1);
@@ -106,10 +106,13 @@ public class FileServletTest {
         return numbers;
     }
 
-    public static int[] getNumbers(int amount) {
+    public static int[] getNumbers(int amount, boolean shuffle) {
         int[] numbers = new int[amount];
         for (int i = 0 ; i < numbers.length; ++i) {
             numbers[i] = i;
+        }
+        if (shuffle) {
+            numbers = getRandomNumbers(numbers);
         }
         return numbers;
     }

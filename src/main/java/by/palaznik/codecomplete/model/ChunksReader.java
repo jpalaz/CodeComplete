@@ -6,6 +6,10 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 
 public class ChunksReader {
     private int index;
@@ -93,5 +97,15 @@ public class ChunksReader {
 
     private boolean hasMoreSequenceChunks(int upperBound) {
         return hasMoreChunks() && ((getCurrentNumber() < upperBound) || upperBound == -1);
+    }
+
+    public void renameFileToMerged() {
+        Path from = Paths.get(fileName);
+        Path to = Paths.get("merged.txt");
+        try {
+            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
