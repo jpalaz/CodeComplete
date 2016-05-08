@@ -1,17 +1,30 @@
 package by.palaznik.codecomplete.model;
 
+import org.apache.commons.io.FileUtils;
+
 import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 
 public class ChunksReader {
     private int index;
     private ChunkHeader[] headers;
+    private String fileName;
     private BufferedInputStream stream;
 
-    public ChunksReader(ChunkHeader[] headers, BufferedInputStream stream) {
+    public ChunksReader(ChunkHeader[] headers, String fileName) {
         this.index = 0;
         this.headers = headers;
-        this.stream = stream;
+        this.fileName = fileName;
+    }
+
+    public void openStream() {
+        try {
+            stream = new BufferedInputStream(new FileInputStream(fileName));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public boolean hasMoreChunks() {
@@ -37,7 +50,7 @@ public class ChunksReader {
         index++;
     }
 
-    public void closeFile() {
+    public void closeStream() {
         try {
             if (stream != null) {
                 stream.close();
@@ -45,6 +58,7 @@ public class ChunksReader {
         } catch (IOException e) {
             e.printStackTrace();
         }
+        FileUtils.deleteQuietly(new File(fileName));
     }
 
     public byte[] readChunkSequence(ChunksWriter merged, int upperBound) throws IOException {

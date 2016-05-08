@@ -5,7 +5,6 @@ import by.palaznik.codecomplete.model.ChunkHeader;
 import by.palaznik.codecomplete.model.ChunksReader;
 import by.palaznik.codecomplete.model.ChunksWriter;
 import org.apache.commons.codec.digest.DigestUtils;
-import org.apache.commons.io.FileUtils;
 
 import java.io.*;
 import java.util.ArrayList;
@@ -15,7 +14,7 @@ import java.util.List;
 public class FileService {
 
     private static List<Chunk> bufferedChunks = new ArrayList<>();
-    private static List<ChunkHeader[]> chunksHeaders = new ArrayList<>();
+    private static List<ChunksReader> chunksReaders = new ArrayList<>();
 
     private static int count = 0;
     private static int bytesSize = 0;
@@ -63,9 +62,10 @@ public class FileService {
     }
 
     private static void writeToFile() throws IOException {
-        BufferedOutputStream stream = new BufferedOutputStream(new FileOutputStream(fileNumber++ + ".txt"));
+        String fileName = fileNumber++ + ".txt";
+        BufferedOutputStream stream = new BufferedOutputStream(new FileOutputStream(fileName));
         ChunkHeader[] headers = writeChunks(stream);
-        chunksHeaders.add(headers);
+        chunksReaders.add(new ChunksReader(headers, fileName));
         stream.close();
     }
 
@@ -85,38 +85,25 @@ public class FileService {
         if (fileNumber <= 1) {
             return;
         }
-        List<BufferedInputStream> files = getMergeFiles();
-        if (files.size() == 2) {
-            ChunksReader main = new ChunksReader(chunksHeaders.get(0), files.get(0));
-            ChunksReader secondary = new ChunksReader(chunksHeaders.get(1), files.get(1));
-            merge(main, secondary);
-            main.closeFile();
-            secondary.closeFile();
-            deleteMergedFiles();
+        if (chunksReaders.size() == 2) {
+            ChunksReader first = chunksReaders.get(0);
+            ChunksReader second = chunksReaders.get(1);
+            first.openStream();
+            second.openStream();
+            merge(first, second);
+            first.closeStream();
+            second.closeStream();
+            fileNumber++;
         }
-    }
-
-    private static List<BufferedInputStream> getMergeFiles() {
-        List<BufferedInputStream> files = new ArrayList<>();
-        try {
-            files.add(new BufferedInputStream(new FileInputStream((fileNumber - 2) + ".txt")));
-            files.add(new BufferedInputStream(new FileInputStream((fileNumber - 1) + ".txt")));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return files;
-    }
-
-    private static void deleteMergedFiles() {
-        FileUtils.deleteQuietly(new File((fileNumber - 1) + ".txt"));
-        FileUtils.deleteQuietly(new File((fileNumber - 2) + ".txt"));
-        fileNumber++;
     }
 
     private static void merge(ChunksReader first, ChunksReader second) {
-        try (BufferedOutputStream mergedStream = new BufferedOutputStream(new FileOutputStream(fileNumber + ".txt"))) {
+        String fileName = fileNumber++ + ".txt";
+        try (BufferedOutputStream mergedStream = new BufferedOutputStream(new FileOutputStream(fileName))) {
             ChunkHeader[] mergedHeaders = getEmptyMergedHeaders(first, second);
             mergeToFile(first, second, new ChunksWriter(mergedHeaders, mergedStream));
+            chunksReaders.clear();
+            chunksReaders.add(new ChunksReader(mergedHeaders, fileName));
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -144,7 +131,5 @@ public class FileService {
             isMainSequence = !isMainSequence;
         }
         merged.combineChunksToClusters();
-        chunksHeaders.clear();
-        chunksHeaders.add(merged.getHeaders());
     }
 }
