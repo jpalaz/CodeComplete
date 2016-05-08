@@ -12,11 +12,25 @@ public class ChunksReader {
     private ChunkHeader[] headers;
     private String fileName;
     private BufferedInputStream stream;
+    private int generation;
+
+
+    public ChunksReader(ChunkHeader[] headers, String fileName, int generation) {
+        this.index = 0;
+        this.headers = headers;
+        this.fileName = fileName;
+        this.generation = generation;
+    }
 
     public ChunksReader(ChunkHeader[] headers, String fileName) {
         this.index = 0;
         this.headers = headers;
         this.fileName = fileName;
+        this.generation = 0;
+    }
+
+    public int getGeneration() {
+        return generation;
     }
 
     public void openStream() {
@@ -50,7 +64,7 @@ public class ChunksReader {
         index++;
     }
 
-    public void closeStream() {
+    public void deleteStream() {
         try {
             if (stream != null) {
                 stream.close();

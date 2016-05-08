@@ -8,6 +8,7 @@ import org.junit.Test;
 import java.util.Base64;
 
 import static by.palaznik.codecomplete.controller.FileServletTest.getAlphabetLine;
+import static by.palaznik.codecomplete.controller.FileServletTest.getNumbers;
 import static by.palaznik.codecomplete.controller.FileServletTest.getRandomNumbers;
 import static org.junit.Assert.*;
 
@@ -16,16 +17,26 @@ public class FileServiceTest {
     @Test
     @Ignore
     public void writeChunks10_000_000() throws Exception {
-        sendChunks(10_000_000);
+        sendChunks(10_000_000, true);
     }
 
     @Test
+    @Ignore
     public void writeChunks5_000_000() throws Exception {
-        sendChunks(5_000_000);
+        sendChunks(5_000_000, true);
     }
 
-    private void sendChunks(int amount) {
-        int[] numbers = getRandomNumbers(amount);
+    @Test
+//    @Ignore
+    public void writeChunks5_000_000NotShuffled() throws Exception {
+        sendChunks(5_000_000, false);
+    }
+
+    private void sendChunks(int amount, boolean shuffle) {
+        int[] numbers = getNumbers(amount);
+        if (shuffle) {
+            numbers = getRandomNumbers(numbers);
+        }
         String line = getAlphabetLine().toString();
 
         for (int number : numbers) {

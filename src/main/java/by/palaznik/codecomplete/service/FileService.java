@@ -6,7 +6,9 @@ import by.palaznik.codecomplete.model.ChunksReader;
 import by.palaznik.codecomplete.model.ChunksWriter;
 import org.apache.commons.codec.digest.DigestUtils;
 
-import java.io.*;
+import java.io.BufferedOutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -38,19 +40,21 @@ public class FileService {
         bufferedChunks.add(chunk);
         count++;
         bytesSize += chunk.getData().length;
-        if (isFullBuffer() || isEndOfChunks()) {
+        boolean isEndOfChunks = (count - 1 == end);
+        if (isFullBuffer() || isEndOfChunks) {
             bytesSize = 0;
             writeBuffer();
-            mergeFiles();
+            if (isEndOfChunks) {
+                count = 0;
+                mergeFilesForFinal();
+            } else {
+                mergeFilesWithSameGenerations();
+            }
         }
     }
 
     private static boolean isFullBuffer() {
         return bytesSize >= MAX_SIZE;
-    }
-
-    private static boolean isEndOfChunks() {
-        return count - 1 == end;
     }
 
     private static void writeBuffer() {
@@ -81,29 +85,46 @@ public class FileService {
         return headers;
     }
 
-    private static void mergeFiles() {
-        if (fileNumber <= 1) {
-            return;
-        }
-        if (chunksReaders.size() == 2) {
-            ChunksReader first = chunksReaders.get(0);
-            ChunksReader second = chunksReaders.get(1);
-            first.openStream();
-            second.openStream();
-            merge(first, second);
-            first.closeStream();
-            second.closeStream();
-            fileNumber++;
+    private static void mergeFilesForFinal() {
+        while (chunksReaders.size() > 1) {
+            mergeFiles();
         }
     }
 
-    private static void merge(ChunksReader first, ChunksReader second) {
+    private static void mergeFilesWithSameGenerations() {
+        while (hasSameGenerations()) {
+            mergeFiles();
+        }
+    }
+
+    private static void mergeFiles() {
+        int lastIndex = chunksReaders.size() - 1;
+        ChunksReader first = getChunksReader(lastIndex);
+        ChunksReader second = getChunksReader(lastIndex - 1);
+        merge(first, second, first.getGeneration() + 1);
+        first.deleteStream();
+        second.deleteStream();
+    }
+
+    private static ChunksReader getChunksReader(int lastIndex) {
+        ChunksReader reader = chunksReaders.get(lastIndex);
+        chunksReaders.remove(lastIndex);
+        reader.openStream();
+        return reader;
+    }
+
+    private static boolean hasSameGenerations() {
+        int lastIndex = chunksReaders.size() - 1;
+        return (lastIndex > 0) &&
+                (chunksReaders.get(lastIndex).getGeneration() == chunksReaders.get(lastIndex - 1).getGeneration());
+    }
+
+    private static void merge(ChunksReader first, ChunksReader second, int generation) {
         String fileName = fileNumber++ + ".txt";
         try (BufferedOutputStream mergedStream = new BufferedOutputStream(new FileOutputStream(fileName))) {
             ChunkHeader[] mergedHeaders = getEmptyMergedHeaders(first, second);
             mergeToFile(first, second, new ChunksWriter(mergedHeaders, mergedStream));
-            chunksReaders.clear();
-            chunksReaders.add(new ChunksReader(mergedHeaders, fileName));
+            chunksReaders.add(new ChunksReader(mergedHeaders, fileName, generation));
         } catch (IOException e) {
             e.printStackTrace();
         }
