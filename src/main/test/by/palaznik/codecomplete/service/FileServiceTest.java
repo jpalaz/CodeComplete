@@ -33,7 +33,7 @@ public class FileServiceTest {
     @Test
 //    @Ignore
     public void sendChunks5_000_000() throws Exception {
-        testChunks(5_000_000, true);
+        testChunks(1_000_000, true);
     }
 
     @Test

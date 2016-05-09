@@ -6,69 +6,125 @@ import java.io.BufferedInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.LinkedList;
+import java.util.Queue;
 
 public class ChunksReader {
-    private int index;
-    private ChunkHeader[] headers;
-    private String fileName;
-    private BufferedInputStream stream;
+    private final int MAX_BUFFERED_HEADERS = 50_000;
+    private int chunkIndex;
+    private int fileIndex;
+    private int dataFilePosition;
+    private int size;
     private int generation;
 
+    private String headersFileName;
+    private String dataFileName;
 
-    public ChunksReader(ChunkHeader[] headers, String fileName, int generation) {
-        this.index = 0;
-        this.headers = headers;
-        this.fileName = fileName;
+    private BufferedInputStream headersStream;
+    private FileChannel dataChannel;
+    private FileInputStream dataStream;
+    private Queue<ChunkHeader> headersBuffer;
+    private Queue<byte[]> headersBytes;
+
+    public ChunksReader(String dataFileName, int size, int generation) {
+        this.size = size;
+        this.fileIndex = 0;
+        this.chunkIndex = 0;
+        this.dataFileName = dataFileName;
+        this.headersFileName = "headers_" + dataFileName;
         this.generation = generation;
+        this.headersBuffer = new LinkedList<>();
+        this.headersBytes = new LinkedList<>();
+        this.dataFilePosition = 0;
     }
 
-    public ChunksReader(ChunkHeader[] headers, String fileName) {
-        this.index = 0;
-        this.headers = headers;
-        this.fileName = fileName;
-        this.generation = 0;
+    public ChunksReader(String dataFileName, int size) {
+        this(dataFileName, size, 0);
     }
 
     public int getGeneration() {
         return generation;
     }
 
-    public void openStream() {
+    public void openStreams() {
+        try {
+            dataStream = new FileInputStream(dataFileName);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        dataChannel = dataStream.getChannel();
+        headersStream = openStream(headersFileName);
+    }
+
+    private BufferedInputStream openStream(String fileName) {
+        BufferedInputStream stream = null;
         try {
             stream = new BufferedInputStream(new FileInputStream(fileName));
         } catch (IOException e) {
             e.printStackTrace();
         }
+        return stream;
+    }
+
+    private boolean hasMoreChunksInFile() {
+        return fileIndex < size;
     }
 
     public boolean hasMoreChunks() {
-        return index < headers.length;
+        return chunkIndex < size;
     }
 
     public int getCurrentNumber() {
-        if (hasMoreChunks()) {
-            return headers[index].getBeginNumber();
+        ChunkHeader header = getCurrentHeader();
+        if (header != null) {
+            return header.getBeginNumber();
         }
         return -1;
     }
 
     public int getChunksAmount() {
-        return headers.length;
+        return size;
     }
 
     private ChunkHeader getCurrentHeader() {
-        return headers[index];
+        if (headersBuffer.size() == 0) {
+            readNextHeaders();
+        }
+        return headersBuffer.peek();
     }
 
-    private void increaseIndex() {
-        index++;
+    private void readNextHeaders() {
+        for (int i = 0; i < MAX_BUFFERED_HEADERS && hasMoreChunksInFile(); i++, fileIndex++) {
+            byte[] header = new byte[12];
+            try {
+                headersStream.read(header);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            headersBytes.add(header);
+            int beginNumber = ByteBuffer.wrap(header).getInt(0);
+            int endNumber = ByteBuffer.wrap(header).getInt(4);
+            int bytesAmount = ByteBuffer.wrap(header).getInt(8);
+            headersBuffer.add(new ChunkHeader(beginNumber, endNumber, bytesAmount));
+        }
     }
 
-    public void deleteStream() {
+    private void removeHeader() {
+        headersBuffer.poll();
+    }
+
+    public void deleteStreams() {
+        deleteStream(new BufferedInputStream(dataStream), dataFileName);
+        deleteStream(headersStream, headersFileName);
+    }
+
+    private static void deleteStream(BufferedInputStream stream, String fileName) {
         try {
             if (stream != null) {
                 stream.close();
@@ -79,19 +135,25 @@ public class ChunksReader {
         FileUtils.deleteQuietly(new File(fileName));
     }
 
-    public byte[] readChunkSequence(ChunksWriter merged, int upperBound) throws IOException {
+    public void copyChunks(ChunksWriter merged, int upperBound) throws IOException {
         int bytesAmount = 0;
         do {
-            bytesAmount += headers[index].getBytesAmount();
-            merged.addHeader(getCurrentHeader());
-            increaseIndex();
+            ChunkHeader currentHeader = getCurrentHeader();
+            bytesAmount += currentHeader.getBytesAmount();
+            removeHeader();
+            chunkIndex++;
+            merged.writeHeaders(headersBytes.poll());
         } while (hasMoreSequenceChunks(upperBound));
-        return readBytes(bytesAmount);
+//        copyChunks(merged.getDataChannel(), bytesAmount);
+//        merged.writeChunks(readBytes(bytesAmount));
+        merged.writeChunks(dataChannel, bytesAmount);
+        dataFilePosition += bytesAmount;
+        dataChannel = dataChannel.position(dataFilePosition);
     }
 
     private byte[] readBytes(int bytesAmount) throws IOException {
         byte[] chunks = new byte[bytesAmount];
-        stream.read(chunks);
+        dataStream.read(chunks);
         return chunks;
     }
 
@@ -100,12 +162,16 @@ public class ChunksReader {
     }
 
     public void renameFileToMerged() {
-        Path from = Paths.get(fileName);
+        Path from = Paths.get(dataFileName);
         Path to = Paths.get("merged.txt");
         try {
             Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public boolean equalGenerationWith(ChunksReader reader) {
+        return this.generation == reader.getGeneration();
     }
 }

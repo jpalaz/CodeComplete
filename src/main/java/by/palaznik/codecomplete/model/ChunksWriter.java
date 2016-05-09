@@ -1,26 +1,44 @@
 package by.palaznik.codecomplete.model;
 
 import java.io.BufferedOutputStream;
+import java.io.FileOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.channels.FileChannel;
 
 public class ChunksWriter {
-    private int index;
-    private ChunkHeader[] headers;
-    private BufferedOutputStream stream;
+    private String headersFileName;
+    private String dataFileName;
 
-    public ChunksWriter(ChunkHeader[] headers, BufferedOutputStream stream) {
-        this.headers = headers;
-        this.stream = stream;
-        this.index = 0;
+    private FileOutputStream headersStream;
+    private FileOutputStream dataStream;
+    private int dataFilePosition;
+
+    public ChunksWriter(String dataFileName) {
+        this.dataFileName = dataFileName;
+        this.headersFileName = "headers_" + dataFileName;
+        this.dataFilePosition = 0;
     }
 
-    public ChunkHeader[] getHeaders() {
-        return headers;
+    public void openStreams() {
+        dataStream = openStream(dataFileName);
+        headersStream = openStream(headersFileName);
     }
 
-    public ChunkHeader[] combineChunksToClusters() {
+    public FileChannel getDataChannel() {
+        return dataStream.getChannel();
+    }
+    private FileOutputStream openStream(String fileName) {
+        FileOutputStream stream = null;
+        try {
+            stream = new FileOutputStream(fileName);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return stream;
+    }
+
+/*    public ChunkHeader[] combineChunksToClusters() {
         List<ChunkHeader> combinedHeaders = new ArrayList<>(headers.length);
         for (int i = 0; i < headers.length; i++) {
             if ((i < headers.length - 1) && isNeighbourClusters(headers[i], headers[i + 1])) {
@@ -45,13 +63,30 @@ public class ChunksWriter {
 
     private static boolean isNeighbourClusters(ChunkHeader leftHeader, ChunkHeader rightHeader) {
         return leftHeader.getEndNumber() == rightHeader.getBeginNumber() - 1;
+    }*/
+
+    public void writeChunks(FileChannel from, int bytesAmount) throws IOException {
+//        dataStream.write(chunks);
+        dataStream.getChannel().transferFrom(from, dataFilePosition, bytesAmount);
+        dataFilePosition += bytesAmount;
     }
 
-    public void addHeader(ChunkHeader header) {
-        headers[index++] = header;
+    public void writeHeaders(byte[] headers) throws IOException {
+        headersStream.write(headers);
     }
 
-    public void writeChunkSequence(byte[] chunks) throws IOException {
-        stream.write(chunks);
+    public void closeStreams() {
+        closeStream(dataStream);
+        closeStream(headersStream);
+    }
+
+    private static void closeStream(FileOutputStream stream) {
+        try {
+            if (stream != null) {
+                stream.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }

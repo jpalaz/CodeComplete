@@ -13,6 +13,7 @@ public class MemoryCheck implements Runnable {
         long currentMemory;
         long start = System.currentTimeMillis();
         try (PrintWriter memoryStream = new PrintWriter(new FileOutputStream("memory.txt"))) {
+            memoryStream.print("Periodic memory check: ");
             while (isRunning) {
                 try {
                     Thread.sleep(200);
@@ -27,8 +28,8 @@ public class MemoryCheck implements Runnable {
                 memoryStream.flush();
 
             }
-            memoryStream.println("\nms" + (System.currentTimeMillis() - start)
-                    + "\nMax Memory: " + maxMemory);
+            memoryStream.println("\nWorked: " + (System.currentTimeMillis() - start)
+                    + "ms\nMax Memory: " + maxMemory);
             memoryStream.flush();
         } catch (IOException e) {
             e.printStackTrace();
