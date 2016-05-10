@@ -2,10 +2,7 @@ package by.palaznik.codecomplete.model;
 
 import org.apache.commons.io.FileUtils;
 
-import java.io.BufferedInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -16,21 +13,18 @@ import java.util.LinkedList;
 import java.util.Queue;
 
 public class ChunksReader {
-    private final int MAX_BUFFERED_HEADERS = 50_000;
+    private final int MAX_BUFFERED_HEADERS = 100_000;
     private int chunkIndex;
     private int fileIndex;
-    private int dataFilePosition;
     private int size;
     private int generation;
 
     private String headersFileName;
     private String dataFileName;
 
-    private BufferedInputStream headersStream;
+    private FileChannel headersChannel;
     private FileChannel dataChannel;
-    private FileInputStream dataStream;
     private Queue<ChunkHeader> headersBuffer;
-    private Queue<byte[]> headersBytes;
 
     public ChunksReader(String dataFileName, int size, int generation) {
         this.size = size;
@@ -40,8 +34,6 @@ public class ChunksReader {
         this.headersFileName = "headers_" + dataFileName;
         this.generation = generation;
         this.headersBuffer = new LinkedList<>();
-        this.headersBytes = new LinkedList<>();
-        this.dataFilePosition = 0;
     }
 
     public ChunksReader(String dataFileName, int size) {
@@ -53,27 +45,22 @@ public class ChunksReader {
     }
 
     public void openStreams() {
+        dataChannel = openStream(dataFileName);
+        headersChannel = openStream(headersFileName);
+    }
+
+    private FileChannel openStream(String fileName) {
+        FileChannel channel = null;
         try {
-            dataStream = new FileInputStream(dataFileName);
+            channel = new FileInputStream(fileName).getChannel();
         } catch (IOException e) {
             e.printStackTrace();
         }
-        dataChannel = dataStream.getChannel();
-        headersStream = openStream(headersFileName);
+        return channel;
     }
 
-    private BufferedInputStream openStream(String fileName) {
-        BufferedInputStream stream = null;
-        try {
-            stream = new BufferedInputStream(new FileInputStream(fileName));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return stream;
-    }
-
-    private boolean hasMoreChunksInFile() {
-        return fileIndex < size;
+    private int restChunksInFile() {
+        return size - fileIndex;
     }
 
     public boolean hasMoreChunks() {
@@ -88,10 +75,6 @@ public class ChunksReader {
         return -1;
     }
 
-    public int getChunksAmount() {
-        return size;
-    }
-
     private ChunkHeader getCurrentHeader() {
         if (headersBuffer.size() == 0) {
             readNextHeaders();
@@ -100,18 +83,16 @@ public class ChunksReader {
     }
 
     private void readNextHeaders() {
-        for (int i = 0; i < MAX_BUFFERED_HEADERS && hasMoreChunksInFile(); i++, fileIndex++) {
-            byte[] header = new byte[12];
-            try {
-                headersStream.read(header);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            headersBytes.add(header);
-            int beginNumber = ByteBuffer.wrap(header).getInt(0);
-            int endNumber = ByteBuffer.wrap(header).getInt(4);
-            int bytesAmount = ByteBuffer.wrap(header).getInt(8);
-            headersBuffer.add(new ChunkHeader(beginNumber, endNumber, bytesAmount));
+        int restSize = Math.min(MAX_BUFFERED_HEADERS, restChunksInFile());
+        ByteBuffer bytes = ByteBuffer.allocate(12 * restSize);
+        try {
+            headersChannel.read(bytes);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        bytes.clear();
+        for (int i = 0; i < restSize; i++, fileIndex++) {
+            headersBuffer.add(new ChunkHeader(bytes.getInt(i * 12), bytes.getInt(12 * i + 4), bytes.getInt(12 * i + 8)));
         }
     }
 
@@ -120,14 +101,14 @@ public class ChunksReader {
     }
 
     public void deleteStreams() {
-        deleteStream(new BufferedInputStream(dataStream), dataFileName);
-        deleteStream(headersStream, headersFileName);
+        deleteStream(dataChannel, dataFileName);
+        deleteStream(headersChannel, headersFileName);
     }
 
-    private static void deleteStream(BufferedInputStream stream, String fileName) {
+    private static void deleteStream(FileChannel channel, String fileName) {
         try {
-            if (stream != null) {
-                stream.close();
+            if (channel != null) {
+                channel.close();
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -140,21 +121,11 @@ public class ChunksReader {
         do {
             ChunkHeader currentHeader = getCurrentHeader();
             bytesAmount += currentHeader.getBytesAmount();
-            removeHeader();
+            merged.addHeaders(currentHeader);
             chunkIndex++;
-            merged.writeHeaders(headersBytes.poll());
+            removeHeader();
         } while (hasMoreSequenceChunks(upperBound));
-//        copyChunks(merged.getDataChannel(), bytesAmount);
-//        merged.writeChunks(readBytes(bytesAmount));
         merged.writeChunks(dataChannel, bytesAmount);
-        dataFilePosition += bytesAmount;
-        dataChannel = dataChannel.position(dataFilePosition);
-    }
-
-    private byte[] readBytes(int bytesAmount) throws IOException {
-        byte[] chunks = new byte[bytesAmount];
-        dataStream.read(chunks);
-        return chunks;
     }
 
     private boolean hasMoreSequenceChunks(int upperBound) {

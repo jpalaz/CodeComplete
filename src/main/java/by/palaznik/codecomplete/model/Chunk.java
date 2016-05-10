@@ -1,5 +1,6 @@
 package by.palaznik.codecomplete.model;
 
+import java.nio.ByteBuffer;
 import java.util.Base64;
 
 public class Chunk {
@@ -11,6 +12,15 @@ public class Chunk {
         this.number = number;
         this.data = Base64.getDecoder().decode(dataBase64);
         this.isLast = isLast;
+    }
+
+    public byte[] getBytesOfChunk() {
+        ByteBuffer bytes = ByteBuffer.allocate(12);
+        bytes.putInt(0, number);
+        bytes.putInt(4, number);
+        bytes.putInt(8, data.length);
+        bytes.clear();
+        return bytes.array();
     }
 
     public int getNumber() {

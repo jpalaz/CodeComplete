@@ -1,92 +1,136 @@
 package by.palaznik.codecomplete.model;
 
-import java.io.BufferedOutputStream;
-import java.io.FileOutputStream;
-import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.*;
 
 public class ChunksWriter {
+    private static final int MAX_SIZE = 1_048_576 * 8;
+    private final int MAX_BUFFERED_HEADERS = 100_000;
+
     private String headersFileName;
     private String dataFileName;
+    private int bufferedBytes;
+    private int headersSize;
+    private Deque<ChunkHeader> headers;
 
-    private FileOutputStream headersStream;
-    private FileOutputStream dataStream;
-    private int dataFilePosition;
+    private FileChannel headersChannel;
+    private FileChannel dataChannel;
 
     public ChunksWriter(String dataFileName) {
         this.dataFileName = dataFileName;
         this.headersFileName = "headers_" + dataFileName;
-        this.dataFilePosition = 0;
+        this.bufferedBytes = 0;
+        this.headersSize = 0;
+        this.headers = new LinkedList<>();
     }
 
     public void openStreams() {
-        dataStream = openStream(dataFileName);
-        headersStream = openStream(headersFileName);
+        dataChannel = openStream(dataFileName);
+        headersChannel = openStream(headersFileName);
     }
 
-    public FileChannel getDataChannel() {
-        return dataStream.getChannel();
-    }
-    private FileOutputStream openStream(String fileName) {
-        FileOutputStream stream = null;
+    private FileChannel openStream(String fileName) {
+        FileChannel channel = null;
         try {
-            stream = new FileOutputStream(fileName);
+            channel = new RandomAccessFile(fileName, "rw").getChannel();
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return stream;
+        return channel;
     }
 
-/*    public ChunkHeader[] combineChunksToClusters() {
-        List<ChunkHeader> combinedHeaders = new ArrayList<>(headers.length);
-        for (int i = 0; i < headers.length; i++) {
-            if ((i < headers.length - 1) && isNeighbourClusters(headers[i], headers[i + 1])) {
-                i = combineToClusterEnd(combinedHeaders, i);
-            } else {
-                combinedHeaders.add(headers[i]);
+    public Deque<ChunkHeader> combineChunksToClusters() {
+        if (headers.size() <= 1) {
+            return new ArrayDeque<>(headers);
+        }
+        Deque<ChunkHeader> combinedHeaders = new LinkedList<>();
+        ChunkHeader previous;
+        ChunkHeader current = headers.pollFirst();
+        while (current != null) {
+            previous = current;
+            current = headers.pollFirst();
+            int combinedSize = previous.getBytesAmount();
+            if (previous.isNeighbourWith(current) /*&& (combinedSize + current.getBytesAmount() < MAX_SIZE)*/) {
+                ChunkHeader combined = combineToClusterEnd(combinedSize, previous.getBeginNumber(), current);
+                previous = combined;
+                current = headers.pollFirst();
             }
+            combinedHeaders.addLast(previous);
         }
-        return combinedHeaders.toArray(new ChunkHeader[combinedHeaders.size()]);
+        return combinedHeaders;
     }
 
-    private int combineToClusterEnd(List<ChunkHeader> combinedHeaders, int i) {
-        int combinedSize = headers[i].getBytesAmount();
-        int startNumber = headers[i].getBeginNumber();
-        while ((i + 1 < headers.length) && isNeighbourClusters(headers[i], headers[i + 1])) {
-            i++;
-            combinedSize += headers[i].getBytesAmount();
-        }
-        combinedHeaders.add(new ChunkHeader(startNumber, headers[i].getEndNumber(), combinedSize));
-        return i;
+    private ChunkHeader combineToClusterEnd(int combinedSize, int beginNumber, ChunkHeader neighbour) {
+        ChunkHeader previous;
+        ChunkHeader current = neighbour;
+        do {
+            previous = current;
+            current = headers.pollFirst();
+            combinedSize += previous.getBytesAmount();
+        } while (!headers.isEmpty() && previous.isNeighbourWith(current) /*&& (combinedSize + current.getBytesAmount() < MAX_SIZE)*/);
+        if (current != null)
+            headers.addFirst(current);
+        return new ChunkHeader(beginNumber, previous.getEndNumber(), combinedSize);
     }
-
-    private static boolean isNeighbourClusters(ChunkHeader leftHeader, ChunkHeader rightHeader) {
-        return leftHeader.getEndNumber() == rightHeader.getBeginNumber() - 1;
-    }*/
 
     public void writeChunks(FileChannel from, int bytesAmount) throws IOException {
-//        dataStream.write(chunks);
-        dataStream.getChannel().transferFrom(from, dataFilePosition, bytesAmount);
-        dataFilePosition += bytesAmount;
+        ByteBuffer bytes = ByteBuffer.allocate(bytesAmount);
+        from.read(bytes);
+        bytes.clear();
+        dataChannel.write(bytes);
+        resetBuffer(bytesAmount);
     }
 
-    public void writeHeaders(byte[] headers) throws IOException {
-        headersStream.write(headers);
+    private void resetBuffer(int bytesAmount) throws IOException {
+        bufferedBytes += bytesAmount;
+        if (bufferedBytes > MAX_SIZE) {
+            dataChannel.force(false);
+            bufferedBytes = 0;
+        }
+    }
+
+    public void addHeaders(ChunkHeader header) throws IOException {
+        headers.addLast(header);
+        if (headers.size() >= MAX_BUFFERED_HEADERS) {
+            Deque<ChunkHeader> headers = combineChunksToClusters();
+            while (headers.size() > 0) {
+                headersSize++;
+                ChunkHeader chunkHeader = headers.pollFirst();
+                byte[] headerBytes = chunkHeader.getHeaderInBytes();
+                headersChannel.write(ByteBuffer.wrap(headerBytes));
+            }
+            headersChannel.force(false);
+        }
+    }
+
+    public void writeEndingHeaders() throws IOException {
+        Deque<ChunkHeader> headers = combineChunksToClusters();
+        while (!headers.isEmpty()) {
+            headersSize++;
+            byte[] headerBytes = headers.pollFirst().getHeaderInBytes();
+            headersChannel.write(ByteBuffer.wrap(headerBytes));
+        }
     }
 
     public void closeStreams() {
-        closeStream(dataStream);
-        closeStream(headersStream);
+        closeStream(dataChannel);
+        closeStream(headersChannel);
     }
 
-    private static void closeStream(FileOutputStream stream) {
+    private static void closeStream(FileChannel channel) {
         try {
-            if (stream != null) {
-                stream.close();
+            if (channel != null) {
+                channel.close();
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    public int getHeadersSize() {
+        return headersSize;
     }
 }

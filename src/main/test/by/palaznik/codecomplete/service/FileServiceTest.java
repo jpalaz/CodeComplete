@@ -19,10 +19,10 @@ public class FileServiceTest {
 
     @Before
     public void setUp() throws Exception {
-        memory = new MemoryCheck();
+     /*   memory = new MemoryCheck();
         thread = new Thread(memory);
         thread.start();
-    }
+  */  }
 
     @Test
     @Ignore
@@ -33,7 +33,7 @@ public class FileServiceTest {
     @Test
 //    @Ignore
     public void sendChunks5_000_000() throws Exception {
-        testChunks(1_000_000, true);
+        testChunks(25_00_000, true);
     }
 
     @Test
@@ -44,7 +44,7 @@ public class FileServiceTest {
 
     private void testChunks(int amount, boolean shuffle) {
         sendChunks(amount, shuffle);
-        endMemoryCheck();
+//        endMemoryCheck();
         testValues(amount);
     }
 

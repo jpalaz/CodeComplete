@@ -8,7 +8,6 @@ import org.apache.commons.codec.digest.DigestUtils;
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -78,16 +77,9 @@ public class FileService {
         Collections.sort(bufferedChunks, (Chunk first, Chunk second) -> first.getNumber() - second.getNumber());
         for (Chunk chunk : bufferedChunks) {
             dataStream.write(chunk.getData());
-            writeIntToStream(headersStream, chunk.getNumber());
-            writeIntToStream(headersStream, chunk.getNumber());
-            writeIntToStream(headersStream, chunk.getData().length);
+            headersStream.write(chunk.getBytesOfChunk());
         }
         bufferedChunks.clear();
-    }
-
-    private static void writeIntToStream(BufferedOutputStream headersStream, int number) throws IOException {
-        byte[] bytes = ByteBuffer.allocate(4).putInt(number).array();
-        headersStream.write(bytes);
     }
 
     private static void mergeFilesForFinal() {
@@ -128,16 +120,15 @@ public class FileService {
 
     private static void merge(ChunksReader first, ChunksReader second, int generation) {
         String fileName = fileNumber++ + ".txt";
-        int mergedSize = first.getChunksAmount() + second.getChunksAmount();
         try {
-            mergeToFile(first, second, new ChunksWriter(fileName));
+            int mergedSize = mergeToFile(first, second, new ChunksWriter(fileName));
             chunksReaders.add(new ChunksReader(fileName, mergedSize, generation));
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private static void mergeToFile(ChunksReader first, ChunksReader second, ChunksWriter merged) throws IOException {
+    private static int mergeToFile(ChunksReader first, ChunksReader second, ChunksWriter merged) throws IOException {
         int firstNumber = first.getCurrentNumber();
         int secondNumber = second.getCurrentNumber();
         boolean isMainSequence = firstNumber < secondNumber;
@@ -150,8 +141,9 @@ public class FileService {
             }
             isMainSequence = !isMainSequence;
         }
+        merged.writeEndingHeaders();
         merged.closeStreams();
-//        merged.combineChunksToClusters();
+        return merged.getHeadersSize();
     }
 
     private static int copyChunks(ChunksWriter merged, ChunksReader current, int upperBound) throws IOException {
