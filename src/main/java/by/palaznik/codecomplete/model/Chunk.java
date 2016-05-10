@@ -14,7 +14,7 @@ public class Chunk {
         this.isLast = isLast;
     }
 
-    public byte[] getBytesOfChunk() {
+    public byte[] getHeaderInBytes() {
         ByteBuffer bytes = ByteBuffer.allocate(12);
         bytes.putInt(0, number);
         bytes.putInt(4, number);

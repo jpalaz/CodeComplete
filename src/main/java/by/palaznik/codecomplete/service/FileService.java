@@ -8,8 +8,11 @@ import org.apache.commons.codec.digest.DigestUtils;
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 public class FileService {
@@ -22,7 +25,8 @@ public class FileService {
     private static int end = -1;
     private static int fileNumber = 0;
 
-    private static final int MAX_SIZE = 1_048_576 * 16;
+    private static final int MAX_SIZE = 1_048_576 * 8;
+    private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
 
     public static boolean checkHash(Chunk chunk, String hash) {
         String dataHash = DigestUtils.md5Hex(chunk.getData());
@@ -56,8 +60,8 @@ public class FileService {
 
     private static void writeBuffer() {
         try {
-            bytesSize = 0;
             writeToFile();
+            bytesSize = 0;
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -66,19 +70,41 @@ public class FileService {
     private static void writeToFile() throws IOException {
         String fileName = fileNumber++ + ".txt";
         chunksReaders.add(new ChunksReader(fileName, bufferedChunks.size()));
-        BufferedOutputStream dataStream = new BufferedOutputStream(new FileOutputStream(fileName));
+
+        /*BufferedOutputStream dataStream = new BufferedOutputStream(new FileOutputStream(fileName));
         BufferedOutputStream headersStream = new BufferedOutputStream(new FileOutputStream("headers_" + fileName));
         writeChunks(dataStream, headersStream);
         dataStream.close();
-        headersStream.close();
+        headersStream.close();*/
+
+        FileChannel dataChannel = new FileOutputStream(fileName).getChannel();
+        FileChannel headersChannel = new FileOutputStream("headers_" + fileName).getChannel();
+        writeChunksChannel(dataChannel, headersChannel);
+        dataChannel.close();
+        headersChannel.close();
     }
 
     private static void writeChunks(BufferedOutputStream dataStream, BufferedOutputStream headersStream) throws IOException {
-        Collections.sort(bufferedChunks, (Chunk first, Chunk second) -> first.getNumber() - second.getNumber());
+        Collections.sort(bufferedChunks, chunkComparator);
         for (Chunk chunk : bufferedChunks) {
             dataStream.write(chunk.getData());
-            headersStream.write(chunk.getBytesOfChunk());
+            headersStream.write(chunk.getHeaderInBytes());
         }
+        bufferedChunks.clear();
+    }
+
+    private static void writeChunksChannel(FileChannel dataChannel, FileChannel headersChannel) throws IOException {
+        Collections.sort(bufferedChunks, chunkComparator);
+        ByteBuffer dataBuffer = ByteBuffer.allocate(bytesSize);
+        ByteBuffer headerBuffer = ByteBuffer.allocate(bufferedChunks.size() * 12);
+        for (Chunk chunk : bufferedChunks) {
+            dataBuffer.put(chunk.getData());
+            headerBuffer.put(chunk.getHeaderInBytes());
+        }
+        dataBuffer.flip();
+        dataChannel.write(dataBuffer);
+        headerBuffer.flip();
+        headersChannel.write(headerBuffer);
         bufferedChunks.clear();
     }
 
@@ -108,7 +134,7 @@ public class FileService {
     private static ChunksReader getChunksReader(int lastIndex) {
         ChunksReader reader = chunksReaders.get(lastIndex);
         chunksReaders.remove(lastIndex);
-        reader.openStreams();
+        reader.openFiles();
         return reader;
     }
 
@@ -141,9 +167,9 @@ public class FileService {
             }
             isMainSequence = !isMainSequence;
         }
-        merged.writeEndingHeaders();
+        merged.writeEndings();
         merged.closeStreams();
-        return merged.getHeadersSize();
+        return merged.getHeadersAmount();
     }
 
     private static int copyChunks(ChunksWriter merged, ChunksReader current, int upperBound) throws IOException {

@@ -1,10 +1,13 @@
 package by.palaznik.codecomplete.model;
 
+import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.LinkedList;
 
 public class ChunksWriter {
     private static final int MAX_SIZE = 1_048_576 * 8;
@@ -12,9 +15,11 @@ public class ChunksWriter {
 
     private String headersFileName;
     private String dataFileName;
-    private int bufferedBytes;
-    private int headersSize;
+    private int bufferedDataSize;
+    private int headersAmount;
+
     private Deque<ChunkHeader> headers;
+    ByteBuffer dataBuffer;
 
     private FileChannel headersChannel;
     private FileChannel dataChannel;
@@ -22,9 +27,10 @@ public class ChunksWriter {
     public ChunksWriter(String dataFileName) {
         this.dataFileName = dataFileName;
         this.headersFileName = "headers_" + dataFileName;
-        this.bufferedBytes = 0;
-        this.headersSize = 0;
+        this.bufferedDataSize = 0;
+        this.headersAmount = 0;
         this.headers = new LinkedList<>();
+        this.dataBuffer = ByteBuffer.allocate(MAX_SIZE);
     }
 
     public void openStreams() {
@@ -54,8 +60,7 @@ public class ChunksWriter {
             current = headers.pollFirst();
             int combinedSize = previous.getBytesAmount();
             if (previous.isNeighbourWith(current) /*&& (combinedSize + current.getBytesAmount() < MAX_SIZE)*/) {
-                ChunkHeader combined = combineToClusterEnd(combinedSize, previous.getBeginNumber(), current);
-                previous = combined;
+                previous = combineToClusterEnd(combinedSize, previous.getBeginNumber(), current);
                 current = headers.pollFirst();
             }
             combinedHeaders.addLast(previous);
@@ -70,49 +75,62 @@ public class ChunksWriter {
             previous = current;
             current = headers.pollFirst();
             combinedSize += previous.getBytesAmount();
-        } while (!headers.isEmpty() && previous.isNeighbourWith(current) /*&& (combinedSize + current.getBytesAmount() < MAX_SIZE)*/);
+        }
+        while (!headers.isEmpty() && previous.isNeighbourWith(current) /*&& (combinedSize + current.getBytesAmount() < MAX_SIZE)*/);
         if (current != null)
             headers.addFirst(current);
         return new ChunkHeader(beginNumber, previous.getEndNumber(), combinedSize);
     }
 
-    public void writeChunks(FileChannel from, int bytesAmount) throws IOException {
-        ByteBuffer bytes = ByteBuffer.allocate(bytesAmount);
-        from.read(bytes);
-        bytes.clear();
-        dataChannel.write(bytes);
-        resetBuffer(bytesAmount);
-    }
-
-    private void resetBuffer(int bytesAmount) throws IOException {
-        bufferedBytes += bytesAmount;
-        if (bufferedBytes > MAX_SIZE) {
-            dataChannel.force(false);
-            bufferedBytes = 0;
+   /* public void transferBytesFrom(FileChannel from, int bytesAmount) throws IOException {
+        if (bufferedDataSize + bytesAmount > MAX_SIZE) {
+            writeBufferedChunks();
         }
+        bufferedDataSize += bytesAmount;
+        ByteBuffer readBuffer = ByteBuffer.allocate(bytesAmount);
+        from.read(readBuffer);
+        readBuffer.flip();
+        dataBuffer.put(readBuffer);
+    }*/
+
+    public void transferBytesFrom(BufferedInputStream from, int bytesAmount) throws IOException {
+        if (bufferedDataSize + bytesAmount > MAX_SIZE) {
+            writeBufferedChunks();
+        }
+        bufferedDataSize += bytesAmount;
+        byte[] bytes = new byte[bytesAmount];
+        from.read(bytes);
+        dataBuffer.put(bytes);
     }
 
-    public void addHeaders(ChunkHeader header) throws IOException {
+    private void writeBufferedChunks() throws IOException {
+        dataBuffer.flip();
+        dataChannel.write(dataBuffer);
+        bufferedDataSize = 0;
+        dataBuffer.clear();
+    }
+
+    public void addHeader(ChunkHeader header) throws IOException {
         headers.addLast(header);
         if (headers.size() >= MAX_BUFFERED_HEADERS) {
-            Deque<ChunkHeader> headers = combineChunksToClusters();
-            while (headers.size() > 0) {
-                headersSize++;
-                ChunkHeader chunkHeader = headers.pollFirst();
-                byte[] headerBytes = chunkHeader.getHeaderInBytes();
-                headersChannel.write(ByteBuffer.wrap(headerBytes));
-            }
-            headersChannel.force(false);
+            writeHeaders();
         }
     }
 
-    public void writeEndingHeaders() throws IOException {
+    private void writeHeaders() throws IOException {
         Deque<ChunkHeader> headers = combineChunksToClusters();
+        ByteBuffer buffer = ByteBuffer.allocate(headers.size() * 12);
+        headersAmount += headers.size();
         while (!headers.isEmpty()) {
-            headersSize++;
-            byte[] headerBytes = headers.pollFirst().getHeaderInBytes();
-            headersChannel.write(ByteBuffer.wrap(headerBytes));
+            buffer.put(headers.pollFirst().getHeaderInBytes());
         }
+        buffer.flip();
+        headersChannel.write(buffer);
+    }
+
+    public void writeEndings() throws IOException {
+        writeBufferedChunks();
+        writeHeaders();
     }
 
     public void closeStreams() {
@@ -130,7 +148,7 @@ public class ChunksWriter {
         }
     }
 
-    public int getHeadersSize() {
-        return headersSize;
+    public int getHeadersAmount() {
+        return headersAmount;
     }
 }

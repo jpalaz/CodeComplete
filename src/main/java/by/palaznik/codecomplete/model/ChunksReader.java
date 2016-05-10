@@ -23,7 +23,8 @@ public class ChunksReader {
     private String dataFileName;
 
     private FileChannel headersChannel;
-    private FileChannel dataChannel;
+//    private FileChannel dataChannel;
+    private BufferedInputStream dataStream;
     private Queue<ChunkHeader> headersBuffer;
 
     public ChunksReader(String dataFileName, int size, int generation) {
@@ -44,15 +45,26 @@ public class ChunksReader {
         return generation;
     }
 
-    public void openStreams() {
-        dataChannel = openStream(dataFileName);
-        headersChannel = openStream(headersFileName);
+    public void openFiles() {
+//        dataChannel = openChannel(dataFileName);
+        headersChannel = openChannel(headersFileName);
+        dataStream = openStream(dataFileName);
     }
 
-    private FileChannel openStream(String fileName) {
+    private BufferedInputStream openStream(String fileName) {
+        BufferedInputStream stream = null;
+        try {
+            stream = new BufferedInputStream(new FileInputStream(fileName));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return stream;
+    }
+
+    private FileChannel openChannel(String fileName) {
         FileChannel channel = null;
         try {
-            channel = new FileInputStream(fileName).getChannel();
+            channel = new RandomAccessFile(fileName, "rw").getChannel();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -101,11 +113,23 @@ public class ChunksReader {
     }
 
     public void deleteStreams() {
-        deleteStream(dataChannel, dataFileName);
-        deleteStream(headersChannel, headersFileName);
+//        deleteChannel(dataChannel, dataFileName);
+        deleteStream(dataStream, dataFileName);
+        deleteChannel(headersChannel, headersFileName);
     }
 
-    private static void deleteStream(FileChannel channel, String fileName) {
+    private static void deleteStream(BufferedInputStream stream, String fileName) {
+        try {
+            if (stream != null) {
+                stream.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        FileUtils.deleteQuietly(new File(fileName));
+    }
+
+    private static void deleteChannel(FileChannel channel, String fileName) {
         try {
             if (channel != null) {
                 channel.close();
@@ -121,11 +145,12 @@ public class ChunksReader {
         do {
             ChunkHeader currentHeader = getCurrentHeader();
             bytesAmount += currentHeader.getBytesAmount();
-            merged.addHeaders(currentHeader);
+            merged.addHeader(currentHeader);
             chunkIndex++;
             removeHeader();
         } while (hasMoreSequenceChunks(upperBound));
-        merged.writeChunks(dataChannel, bytesAmount);
+//        merged.transferBytesFrom(dataChannel, bytesAmount);
+        merged.transferBytesFrom(dataStream, bytesAmount);
     }
 
     private boolean hasMoreSequenceChunks(int upperBound) {
