@@ -25,20 +25,14 @@ public class FileServiceTest {
   */  }
 
     @Test
-    @Ignore
-    public void sendChunks10_000_000() throws Exception {
-        testChunks(10_000_000, true);
-    }
-
-    @Test
 //    @Ignore
-    public void sendChunks5_000_000() throws Exception {
-        testChunks(25_00_000, true);
+    public void sendChunks() throws Exception {
+        testChunks(25_000_000, true);
     }
 
     @Test
     @Ignore
-    public void sendChunks5_000_000NotShuffled() throws Exception {
+    public void sendChunksNotShuffled() throws Exception {
         testChunks(5_000_000, false);
     }
 

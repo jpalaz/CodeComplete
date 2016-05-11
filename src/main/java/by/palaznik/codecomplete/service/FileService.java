@@ -5,18 +5,15 @@ import by.palaznik.codecomplete.model.ChunksReader;
 import by.palaznik.codecomplete.model.ChunksWriter;
 import org.apache.commons.codec.digest.DigestUtils;
 
-import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 public class FileService {
 
+    private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
     private static List<Chunk> bufferedChunks = new ArrayList<>();
     private static List<ChunksReader> chunksReaders = new ArrayList<>();
 
@@ -24,9 +21,7 @@ public class FileService {
     private static int bytesSize = 0;
     private static int end = -1;
     private static int fileNumber = 0;
-
     private static final int MAX_SIZE = 1_048_576 * 8;
-    private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
 
     public static boolean checkHash(Chunk chunk, String hash) {
         String dataHash = DigestUtils.md5Hex(chunk.getData());
@@ -71,26 +66,11 @@ public class FileService {
         String fileName = fileNumber++ + ".txt";
         chunksReaders.add(new ChunksReader(fileName, bufferedChunks.size()));
 
-        /*BufferedOutputStream dataStream = new BufferedOutputStream(new FileOutputStream(fileName));
-        BufferedOutputStream headersStream = new BufferedOutputStream(new FileOutputStream("headers_" + fileName));
-        writeChunks(dataStream, headersStream);
-        dataStream.close();
-        headersStream.close();*/
-
         FileChannel dataChannel = new FileOutputStream(fileName).getChannel();
         FileChannel headersChannel = new FileOutputStream("headers_" + fileName).getChannel();
         writeChunksChannel(dataChannel, headersChannel);
         dataChannel.close();
         headersChannel.close();
-    }
-
-    private static void writeChunks(BufferedOutputStream dataStream, BufferedOutputStream headersStream) throws IOException {
-        Collections.sort(bufferedChunks, chunkComparator);
-        for (Chunk chunk : bufferedChunks) {
-            dataStream.write(chunk.getData());
-            headersStream.write(chunk.getHeaderInBytes());
-        }
-        bufferedChunks.clear();
     }
 
     private static void writeChunksChannel(FileChannel dataChannel, FileChannel headersChannel) throws IOException {

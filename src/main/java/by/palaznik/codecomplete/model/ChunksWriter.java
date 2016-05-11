@@ -5,7 +5,6 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.LinkedList;
 
@@ -19,7 +18,7 @@ public class ChunksWriter {
     private int headersAmount;
 
     private Deque<ChunkHeader> headers;
-    ByteBuffer dataBuffer;
+    private ByteBuffer dataBuffer;
 
     private FileChannel headersChannel;
     private FileChannel dataChannel;
@@ -50,7 +49,7 @@ public class ChunksWriter {
 
     public Deque<ChunkHeader> combineChunksToClusters() {
         if (headers.size() <= 1) {
-            return new ArrayDeque<>(headers);
+            return new LinkedList<>(headers);
         }
         Deque<ChunkHeader> combinedHeaders = new LinkedList<>();
         ChunkHeader previous;
@@ -82,24 +81,11 @@ public class ChunksWriter {
         return new ChunkHeader(beginNumber, previous.getEndNumber(), combinedSize);
     }
 
-   /* public void transferBytesFrom(FileChannel from, int bytesAmount) throws IOException {
-        if (bufferedDataSize + bytesAmount > MAX_SIZE) {
+    public void transferBytesFrom(byte[] bytes) throws IOException {
+        if (bufferedDataSize + bytes.length > MAX_SIZE) {
             writeBufferedChunks();
         }
-        bufferedDataSize += bytesAmount;
-        ByteBuffer readBuffer = ByteBuffer.allocate(bytesAmount);
-        from.read(readBuffer);
-        readBuffer.flip();
-        dataBuffer.put(readBuffer);
-    }*/
-
-    public void transferBytesFrom(BufferedInputStream from, int bytesAmount) throws IOException {
-        if (bufferedDataSize + bytesAmount > MAX_SIZE) {
-            writeBufferedChunks();
-        }
-        bufferedDataSize += bytesAmount;
-        byte[] bytes = new byte[bytesAmount];
-        from.read(bytes);
+        bufferedDataSize += bytes.length ;
         dataBuffer.put(bytes);
     }
 
