@@ -13,34 +13,28 @@ import java.util.LinkedList;
 import java.util.Queue;
 
 public class ChunksReader {
-    private final int MAX_BUFFERED_HEADERS = 100_000;
-    private static final int MAX_SIZE = 1_048_576 * 64;
+    private final int MAX_BUFFERED_HEADERS = 200_000;
 
     private int chunkIndex;
     private int fileIndex;
     private int size;
     private int generation;
-//    private int dataBufferPosition;
 
     private String headersFileName;
     private String dataFileName;
 
     private FileChannel headersChannel;
-    private FileChannel dataChannel;
-    private ByteBuffer dataBuffer;
-//    private BufferedInputStream dataStream;
+    private BufferedInputStream dataStream;
     private Queue<ChunkHeader> headersBuffer;
 
     public ChunksReader(String dataFileName, int size, int generation) {
         this.size = size;
         this.fileIndex = 0;
         this.chunkIndex = 0;
-//        this.dataBufferPosition = 0;
         this.dataFileName = dataFileName;
         this.headersFileName = "headers_" + dataFileName;
         this.generation = generation;
         this.headersBuffer = new LinkedList<>();
-        this.dataBuffer = ByteBuffer.allocate(MAX_SIZE);
     }
 
     public ChunksReader(String dataFileName, int size) {
@@ -57,9 +51,7 @@ public class ChunksReader {
 
     public void openFiles() {
         headersChannel = openChannel(headersFileName);
-        dataChannel = openChannel(dataFileName);
-        readDataToBuffer();
-//        dataStream = openStream(dataFileName);
+        dataStream = openStream(dataFileName);
     }
 
     private BufferedInputStream openStream(String fileName) {
@@ -124,32 +116,10 @@ public class ChunksReader {
             chunkIndex++;
             removeHeader();
         } while (hasMoreSequenceChunks(upperBound));
-        if (dataBuffer.position() + bytesAmount > MAX_SIZE) {
-            removeBytesFromStart();
-            readDataToBuffer();
-//            dataBufferPosition = 0;
-        }
+
         byte[] bytes = new byte[bytesAmount];
-//        dataBufferPosition += bytesAmount;
-        dataBuffer.get(bytes);
+        dataStream.read(bytes);
         merged.transferBytesFrom(bytes);
-    }
-
-    private void readDataToBuffer() {
-        try {
-            dataChannel.read(dataBuffer);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        dataBuffer.clear();
-    }
-
-    private void removeBytesFromStart() {
-        for(int i = dataBuffer.position(), index = 0; i < dataBuffer.limit(); i++, index++) {
-            dataBuffer.put(index, dataBuffer.get(i));
-            dataBuffer.put(i, (byte)0);
-        }
-        dataBuffer.position(dataBuffer.limit() - dataBuffer.position());
     }
 
     private void removeHeader() {
@@ -177,8 +147,7 @@ public class ChunksReader {
     }
 
     private void closeFiles() {
-//        closeStream(dataStream);
-        closeChannel(dataChannel);
+        closeStream(dataStream);
         closeChannel(headersChannel);
     }
 

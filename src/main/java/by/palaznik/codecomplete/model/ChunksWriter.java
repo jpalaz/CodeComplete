@@ -9,8 +9,8 @@ import java.util.Deque;
 import java.util.LinkedList;
 
 public class ChunksWriter {
-    private static final int MAX_SIZE = 1_048_576 * 8;
-    private final int MAX_BUFFERED_HEADERS = 100_000;
+    private static final int MAX_SIZE = 1_048_576 * 32;
+    private final int MAX_BUFFERED_HEADERS = 200_000;
 
     private String headersFileName;
     private String dataFileName;

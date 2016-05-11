@@ -21,7 +21,7 @@ public class FileService {
     private static int bytesSize = 0;
     private static int end = -1;
     private static int fileNumber = 0;
-    private static final int MAX_SIZE = 1_048_576 * 8;
+    private static final int MAX_SIZE = 1_048_576 * 32;
 
     public static boolean checkHash(Chunk chunk, String hash) {
         String dataHash = DigestUtils.md5Hex(chunk.getData());
