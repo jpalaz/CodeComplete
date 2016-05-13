@@ -13,26 +13,21 @@ import java.util.LinkedList;
 import java.util.Queue;
 
 public class ChunksReader {
-    private final int MAX_BUFFERED_HEADERS = 200_000;
+    private static final int MAX_SIZE = 1_048_576 * 4;
 
     private int chunkIndex;
-    private int fileIndex;
     private int size;
     private int generation;
+    private ByteBuffer bytes = ByteBuffer.allocate(MAX_SIZE);
 
-    private String headersFileName;
     private String dataFileName;
-
-    private FileChannel headersChannel;
-    private BufferedInputStream dataStream;
+    private FileChannel dataChannel;
     private Queue<ChunkHeader> headersBuffer;
 
     public ChunksReader(String dataFileName, int size, int generation) {
-        this.size = size;
-        this.fileIndex = 0;
         this.chunkIndex = 0;
+        this.size = size;
         this.dataFileName = dataFileName;
-        this.headersFileName = "headers_" + dataFileName;
         this.generation = generation;
         this.headersBuffer = new LinkedList<>();
     }
@@ -50,8 +45,7 @@ public class ChunksReader {
     }
 
     public void openFiles() {
-        headersChannel = openChannel(headersFileName);
-        dataStream = openStream(dataFileName);
+        dataChannel = openChannel(dataFileName);
     }
 
     private BufferedInputStream openStream(String fileName) {
@@ -84,42 +78,62 @@ public class ChunksReader {
 
     private ChunkHeader getCurrentHeader() {
         if (headersBuffer.size() == 0) {
-            readNextHeaders();
+            readData();
         }
         return headersBuffer.peek();
     }
 
-    private void readNextHeaders() {
-        int restSize = Math.min(MAX_BUFFERED_HEADERS, restChunksInFile());
-        ByteBuffer bytes = ByteBuffer.allocate(12 * restSize);
+    private void readData() {
+        readDataToBuffer(bytes);
+        bytes.flip();
+        while (bytes.remaining() > 12) {
+//            byte[] headerBytes = new byte[12];
+//            bytes.get(headerBytes);
+//            bytes.position(bytes.position() - 12);
+            ChunkHeader header = new ChunkHeader(bytes.getInt(), bytes.getInt(), bytes.getInt());
+            headersBuffer.add(header);
+            if (bytes.remaining() >= header.getBytesAmount()) {
+                getDataFromBuffer(header, bytes);
+            } else {
+                ByteBuffer remainingHeader = ByteBuffer.allocate(header.getBytesAmount());
+                remainingHeader.put(bytes);
+                readDataToBuffer(remainingHeader);
+                remainingHeader.flip();
+                getDataFromBuffer(header, remainingHeader);
+            }
+        }
+        shiftRemainingBytesToStart();
+    }
+
+    private void readDataToBuffer(ByteBuffer buffer) {
         try {
-            headersChannel.read(bytes);
+            dataChannel.read(buffer);
         } catch (IOException e) {
             e.printStackTrace();
         }
-        bytes.flip();
-        for (int i = 0; i < restSize; i++, fileIndex++) {
-            headersBuffer.add(new ChunkHeader(bytes.getInt(), bytes.getInt(), bytes.getInt()));
-        }
     }
 
-    private int restChunksInFile() {
-        return size - fileIndex;
+    private void getDataFromBuffer(ChunkHeader header, ByteBuffer buffer) {
+        byte[] data = new byte[header.getBytesAmount()];
+        buffer.get(data);
+        header.setData(data);
+    }
+
+    private void shiftRemainingBytesToStart() {
+        for(int i = bytes.position(), index = 0; i < bytes.limit(); i++, index++) {
+            bytes.put(index, bytes.get(i));
+            bytes.put(i, (byte)0);
+        }
+        bytes.position(bytes.limit() - bytes.position());
     }
 
     public void copyChunks(ChunksWriter merged, int upperBound) throws IOException {
-        int bytesAmount = 0;
         do {
             ChunkHeader currentHeader = getCurrentHeader();
-            bytesAmount += currentHeader.getBytesAmount();
-            merged.addHeader(currentHeader);
+            merged.addChunk(currentHeader);
             chunkIndex++;
             removeHeader();
         } while (hasMoreSequenceChunks(upperBound));
-
-        byte[] bytes = new byte[bytesAmount];
-        dataStream.read(bytes);
-        merged.transferBytesFrom(bytes);
     }
 
     private void removeHeader() {
@@ -135,7 +149,7 @@ public class ChunksReader {
     }
 
     public void renameFileToMerged() {
-        closeFiles();
+        closeChannel(dataChannel);
         Path from = Paths.get(dataFileName);
         Path to = Paths.get("merged.txt");
         try {
@@ -143,12 +157,6 @@ public class ChunksReader {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        FileUtils.deleteQuietly(new File(headersFileName));
-    }
-
-    private void closeFiles() {
-        closeStream(dataStream);
-        closeChannel(headersChannel);
     }
 
     private static void closeStream(BufferedInputStream stream) {
@@ -172,8 +180,7 @@ public class ChunksReader {
     }
 
     public void deleteStreams() {
-        closeFiles();
+        closeChannel(dataChannel);
         FileUtils.deleteQuietly(new File(dataFileName));
-        FileUtils.deleteQuietly(new File(headersFileName));
     }
 }
