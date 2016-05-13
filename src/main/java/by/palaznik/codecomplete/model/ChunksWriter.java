@@ -52,19 +52,16 @@ public class ChunksWriter {
             previous = current;
             current = headers.pollFirst();
             int combinedSize = previous.getBytesAmount();
-            int sumSizeWithHeaders = previous.getSize(isFinal);
-            headersAmount++;
+            int sumSizeWithHeaders = previous.getBytesAmount() + 12;
             combinedDataBuffer.put(previous.getData());
-            if (previous.isNeighbourWith(current) && hasNotBigSize(sumSizeWithHeaders + current.getSize(isFinal))) {
+            if (previous.isNeighbourWith(current) && hasNotBigSize(sumSizeWithHeaders + current.getBytesAmount())) {
                 previous = combineToClusterEnd(combinedSize, sumSizeWithHeaders, previous.getBeginNumber(), current);
                 current = headers.pollFirst();
             }
             if (!isFinal) {
-                dataBuffer.putInt(previous.getBeginNumber());
-                dataBuffer.putInt(previous.getEndNumber());
-                dataBuffer.putInt(previous.getBytesAmount());
+                dataBuffer.put(previous.getHeaderInBytes());
             }
-
+            headersAmount++;
             combinedDataBuffer.flip();
             dataBuffer.put(combinedDataBuffer);
             combinedDataBuffer.clear();
@@ -83,9 +80,8 @@ public class ChunksWriter {
             current = headers.pollFirst();
             combinedDataBuffer.put(previous.getData());
             combinedSize += previous.getBytesAmount();
-            sumSizeWithHeaders += previous.getSize(isFinal);
-        }
-        while (!headers.isEmpty() && previous.isNeighbourWith(current) && (hasNotBigSize( sumSizeWithHeaders + current.getSize(isFinal))));
+            sumSizeWithHeaders += previous.getBytesAmount() + 12;
+        } while (!headers.isEmpty() && previous.isNeighbourWith(current) && (hasNotBigSize( sumSizeWithHeaders + current.getBytesAmount())));
         if (current != null)
             headers.addFirst(current);
         return new ChunkHeader(beginNumber, previous.getEndNumber(), combinedSize);
@@ -94,16 +90,11 @@ public class ChunksWriter {
     public void addChunk(ChunkHeader header) throws IOException {
         int headerSize = header.getSize(isFinal);
         if (bufferedDataSize + headerSize > MAX_SIZE) {
-//            combineChunksToClusters();
+            combineChunksToClusters();
             writeBufferedChunks();
         }
         bufferedDataSize += headerSize;
-        if (!isFinal) {
-            dataBuffer.put(header.getHeaderInBytes());
-        }
-        dataBuffer.put(header.getData());
-        headersAmount++;
-//        headers.addLast(header);
+        headers.addLast(header);
     }
 
     private void writeBufferedChunks() throws IOException {
@@ -114,7 +105,7 @@ public class ChunksWriter {
     }
 
     public void writeEndings() throws IOException {
-//        combineChunksToClusters();
+        combineChunksToClusters();
         writeBufferedChunks();
     }
 
