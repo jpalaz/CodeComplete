@@ -10,25 +10,26 @@ public class ChunkHeader {
     private byte[] data;
 
     public ChunkHeader(int beginNumber, int endNumber, int bytesAmount, byte[] headerBytes) {
+        this.bytesAmount = bytesAmount;
         this.beginNumber = beginNumber;
         this.endNumber = endNumber;
-        this.bytesAmount = bytesAmount;
         this.headerInBytes = generateBytes();
     }
 
     public ChunkHeader(int beginNumber, int endNumber, int bytesAmount) {
+        this.bytesAmount = bytesAmount;
         this.beginNumber = beginNumber;
         this.endNumber = endNumber;
-        this.bytesAmount = bytesAmount;
         this.headerInBytes = generateBytes();
     }
 
     private byte[] generateBytes() {
         ByteBuffer bytes = ByteBuffer.allocate(12);
-        bytes.putInt(0, beginNumber);
-        bytes.putInt(4, endNumber);
-        bytes.putInt(8, bytesAmount);
         bytes.clear();
+        bytes.putInt(0, bytesAmount);
+        bytes.putInt(4, beginNumber);
+        bytes.putInt(8, endNumber);
+        bytes.flip();
         return bytes.array();
     }
 
@@ -58,12 +59,5 @@ public class ChunkHeader {
 
     public boolean isNeighbourWith(ChunkHeader next) {
         return (next != null) && this.endNumber == next.getBeginNumber() - 1;
-    }
-
-    public int getSize(boolean isFinal) {
-        if (isFinal) {
-            return bytesAmount;
-        }
-        return bytesAmount + 12;
     }
 }

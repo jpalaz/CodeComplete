@@ -3,6 +3,7 @@ package by.palaznik.codecomplete.service;
 import by.palaznik.codecomplete.model.Chunk;
 import by.palaznik.codecomplete.model.ChunksReader;
 import by.palaznik.codecomplete.model.ChunksWriter;
+import by.palaznik.codecomplete.model.ChunksWriterFinal;
 import org.apache.commons.codec.digest.DigestUtils;
 
 import java.io.FileOutputStream;
@@ -95,9 +96,6 @@ public class FileService {
             }
             mergeFiles(isFinal);
         }
-        if (chunksReaders.size() == 1) {
-            chunksReaders.peek().renameFileToMerged();
-        }
     }
 
     private static void mergeFilesWithSameGenerations() {
@@ -116,7 +114,7 @@ public class FileService {
 
     private static ChunksReader getChunksReader() {
         ChunksReader reader = chunksReaders.pollLast();
-        reader.openFiles();
+        reader.openFileAndBuffer();
         return reader;
     }
 
@@ -136,8 +134,12 @@ public class FileService {
     private static void merge(ChunksReader first, ChunksReader second, boolean isFinal) {
         String fileName = fileNumber++ + ".txt";
         try {
-            int mergedSize = mergeToFile(first, second, new ChunksWriter(fileName, isFinal));
-            chunksReaders.add(new ChunksReader(fileName, mergedSize, first.getGeneration() + 1));
+            if (isFinal) {
+                mergeToFile(first, second, new ChunksWriterFinal(fileName));
+            } else {
+                int mergedSize = mergeToFile(first, second, new ChunksWriter(fileName));
+                chunksReaders.add(new ChunksReader(fileName, mergedSize, first.getGeneration() + 1));
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -147,7 +149,7 @@ public class FileService {
         int firstNumber = first.getCurrentNumber();
         int secondNumber = second.getCurrentNumber();
         boolean isMainSequence = firstNumber < secondNumber;
-        merged.openStreams();
+        merged.openFile();
         while (first.hasMoreChunks() || second.hasMoreChunks()) {
             if (isMainSequence) {
                 firstNumber = copyChunks(merged, first, secondNumber);
@@ -157,7 +159,7 @@ public class FileService {
             isMainSequence = !isMainSequence;
         }
         merged.writeEndings();
-        merged.closeStreams();
+        merged.closeFile();
         return merged.getHeadersAmount();
     }
 

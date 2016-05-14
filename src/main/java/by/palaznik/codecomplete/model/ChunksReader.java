@@ -5,10 +5,6 @@ import org.apache.commons.io.FileUtils;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.LinkedList;
 import java.util.Queue;
 
@@ -18,7 +14,7 @@ public class ChunksReader {
     private int chunkIndex;
     private int size;
     private int generation;
-    private ByteBuffer bytes = ByteBuffer.allocate(MAX_SIZE);
+    private ByteBuffer bytes;
 
     private String dataFileName;
     private FileChannel dataChannel;
@@ -44,18 +40,9 @@ public class ChunksReader {
         return this.generation == reader.getGeneration();
     }
 
-    public void openFiles() {
+    public void openFileAndBuffer() {
         dataChannel = openChannel(dataFileName);
-    }
-
-    private BufferedInputStream openStream(String fileName) {
-        BufferedInputStream stream = null;
-        try {
-            stream = new BufferedInputStream(new FileInputStream(fileName));
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return stream;
+        bytes = ByteBuffer.allocate(MAX_SIZE);
     }
 
     private FileChannel openChannel(String fileName) {
@@ -86,36 +73,38 @@ public class ChunksReader {
     private void readData() {
         readDataToBuffer(bytes);
         bytes.flip();
-        while (bytes.remaining() > 12) {
-//            byte[] headerBytes = new byte[12];
-//            bytes.get(headerBytes);
-//            bytes.position(bytes.position() - 12);
-            ChunkHeader header = new ChunkHeader(bytes.getInt(), bytes.getInt(), bytes.getInt());
-            headersBuffer.add(header);
-            if (bytes.remaining() >= header.getBytesAmount()) {
-                getDataFromBuffer(header, bytes);
-            } else {
-                ByteBuffer remainingHeader = ByteBuffer.allocate(header.getBytesAmount());
-                remainingHeader.put(bytes);
-                readDataToBuffer(remainingHeader);
-                remainingHeader.flip();
-                getDataFromBuffer(header, remainingHeader);
-            }
+        writeChunksToQueue();
+        if (bytes.position() > 0) {
+            shiftRemainingBytesToStart();
         }
-        shiftRemainingBytesToStart();
     }
 
-    private void readDataToBuffer(ByteBuffer buffer) {
+    private void writeChunksToQueue() {
+        while (bytes.remaining() > 12) {
+            int bytesAmount = bytes.getInt();
+            if (bytes.remaining() >= bytesAmount + 8) {
+                ChunkHeader header = new ChunkHeader(bytes.getInt(), bytes.getInt(), bytesAmount);
+                addChunkToBuffer(header);
+            } else {
+                shift(4 + bytes.remaining());
+                bytes.clear();
+                break;
+            }
+        }
+    }
+
+    private void shift(int length) {
         try {
-            dataChannel.read(buffer);
+            dataChannel.position(dataChannel.position() - length);
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private void getDataFromBuffer(ChunkHeader header, ByteBuffer buffer) {
+    private void addChunkToBuffer(ChunkHeader header) {
+        headersBuffer.add(header);
         byte[] data = new byte[header.getBytesAmount()];
-        buffer.get(data);
+        bytes.get(data);
         header.setData(data);
     }
 
@@ -125,6 +114,14 @@ public class ChunksReader {
             bytes.put(i, (byte)0);
         }
         bytes.position(bytes.limit() - bytes.position());
+    }
+
+    private void readDataToBuffer(ByteBuffer buffer) {
+        try {
+            dataChannel.read(buffer);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     public void copyChunks(ChunksWriter merged, int upperBound) throws IOException {
@@ -148,25 +145,9 @@ public class ChunksReader {
         return chunkIndex < size;
     }
 
-    public void renameFileToMerged() {
+    public void deleteStreams() {
         closeChannel(dataChannel);
-        Path from = Paths.get(dataFileName);
-        Path to = Paths.get("merged.txt");
-        try {
-            Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private static void closeStream(BufferedInputStream stream) {
-        try {
-            if (stream != null) {
-                stream.close();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        FileUtils.deleteQuietly(new File(dataFileName));
     }
 
     private static void closeChannel(FileChannel channel) {
@@ -177,10 +158,5 @@ public class ChunksReader {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-
-    public void deleteStreams() {
-        closeChannel(dataChannel);
-        FileUtils.deleteQuietly(new File(dataFileName));
     }
 }

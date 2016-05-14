@@ -16,10 +16,11 @@ public class Chunk {
 
     public byte[] getHeaderInBytes() {
         ByteBuffer bytes = ByteBuffer.allocate(12);
-        bytes.putInt(0, number);
-        bytes.putInt(4, number);
-        bytes.putInt(8, data.length);
         bytes.clear();
+        bytes.putInt(0, data.length);
+        bytes.putInt(4, number);
+        bytes.putInt(8, number);
+        bytes.flip();
         return bytes.array();
     }
 
