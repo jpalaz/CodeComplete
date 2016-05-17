@@ -1,20 +1,17 @@
 package by.palaznik.codecomplete.service;
 
-import by.palaznik.codecomplete.model.Chunk;
-import by.palaznik.codecomplete.model.ChunksReader;
-import by.palaznik.codecomplete.model.ChunksWriter;
-import by.palaznik.codecomplete.model.ChunksWriterFinal;
+import by.palaznik.codecomplete.model.*;
 import org.apache.commons.codec.digest.DigestUtils;
 
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.*;
 
 public class FileService {
-
+    private static final int MAX_SIZE = 1_048_576 * 16;
     private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
+
     private static List<Chunk> bufferedChunks = new ArrayList<>();
     private static Deque<ChunksReader> chunksReaders = new LinkedList<>();
 
@@ -22,7 +19,6 @@ public class FileService {
     private static int bytesSize = 0;
     private static int end = -1;
     private static int fileNumber = 0;
-    private static final int MAX_SIZE = 1_048_576 * 4;
 
     public static boolean checkHash(Chunk chunk, String hash) {
         String dataHash = DigestUtils.md5Hex(chunk.getData());
@@ -64,23 +60,19 @@ public class FileService {
     }
 
     private static void writeToFile() throws IOException {
-        String fileName = fileNumber++ + ".txt";
-        chunksReaders.addLast(new ChunksReader(fileName, bufferedChunks.size()));
-        FileChannel dataChannel = new FileOutputStream(fileName).getChannel();
-        writeChunksChannel(dataChannel);
-        dataChannel.close();
+//        String fileName = fileNumber++ + ".txt";
+        ByteBuffer dataBuffer = ByteBuffer.allocate(bytesSize + bufferedChunks.size() * 12);
+        writeChunksToBuffer(dataBuffer);
+        chunksReaders.addLast(new ChunksBufferReader(bufferedChunks, dataBuffer));
+        bufferedChunks = new ArrayList<>();
     }
 
-    private static void writeChunksChannel(FileChannel dataChannel) throws IOException {
+    private static void writeChunksToBuffer(ByteBuffer dataBuffer) {
         sortChunks();
-        ByteBuffer dataBuffer = ByteBuffer.allocate(bytesSize + bufferedChunks.size() * 12);
         for (Chunk chunk : bufferedChunks) {
-            dataBuffer.put(chunk.getHeaderInBytes());
             dataBuffer.put(chunk.getData());
         }
         dataBuffer.flip();
-        dataChannel.write(dataBuffer);
-        bufferedChunks.clear();
     }
 
     private static void sortChunks() {
@@ -108,13 +100,13 @@ public class FileService {
         ChunksReader first = getChunksReader();
         ChunksReader second = getChunksReader();
         merge(first, second, isFinal);
-        first.deleteStreams();
-        second.deleteStreams();
+        first.deleteResources();
+        second.deleteResources();
     }
 
     private static ChunksReader getChunksReader() {
         ChunksReader reader = chunksReaders.pollLast();
-        reader.openFileAndBuffer();
+        reader.openResources();
         return reader;
     }
 
@@ -138,7 +130,7 @@ public class FileService {
                 mergeToFile(first, second, new ChunksWriterFinal(fileName));
             } else {
                 int mergedSize = mergeToFile(first, second, new ChunksWriter(fileName));
-                chunksReaders.add(new ChunksReader(fileName, mergedSize, first.getGeneration() + 1));
+                chunksReaders.add(new ChunksFileReader(fileName, mergedSize, first.getGeneration() + 1));
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -158,7 +150,7 @@ public class FileService {
             }
             isMainSequence = !isMainSequence;
         }
-        merged.writeEndings();
+        merged.writeBufferedChunks();
         merged.closeFile();
         return merged.getHeadersAmount();
     }

@@ -1,6 +1,7 @@
 package by.palaznik.codecomplete.model;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -12,17 +13,12 @@ public class ChunksWriterFinal extends ChunksWriter {
     }
 
     @Override
-    public void addChunk(ChunkHeader header) throws IOException {
-        int headerSize = header.getBytesAmount();
-        if (dataBuffer.position() + headerSize > MAX_SIZE) {
+    public void addChunk(ChunkHeader header, ByteBuffer input) {
+        int dataSize = header.getBytesAmount();
+        if (dataBuffer.position() + dataSize > MAX_SIZE) {
             writeBufferedChunks();
         }
-        dataBuffer.put(header.getData());
-    }
-
-    @Override
-    public void writeEndings() throws IOException {
-        writeBufferedChunks();
+        copyChunk(header, input);
     }
 
     @Override
