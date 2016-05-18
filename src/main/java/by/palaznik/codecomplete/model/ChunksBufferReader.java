@@ -8,13 +8,15 @@ public class ChunksBufferReader implements ChunksReader {
     private int chunkIndex;
     private final int size;
     private final int generation;
-    private final ByteBuffer bytes;
+    private final int dataSize;
+    private final ByteBuffer dataBuffer;
 
-    public ChunksBufferReader(List<Chunk> bufferedChunks, ByteBuffer bytes) {
+    public ChunksBufferReader(List<Chunk> bufferedChunks, ByteBuffer dataBuffer, int dataSize) {
         this.chunkIndex = 0;
         this.size = bufferedChunks.size();
         this.generation = 0;
-        this.bytes = bytes;
+        this.dataBuffer = dataBuffer;
+        this.dataSize = dataSize;
         this.bufferedChunks = bufferedChunks;
     }
 
@@ -52,7 +54,8 @@ public class ChunksBufferReader implements ChunksReader {
         do {
             Chunk chunk = getCurrentChunk();
             ChunkHeader header = new ChunkHeader(chunk.getNumber(), chunk.getNumber(), chunk.getData().length);
-            merged.addChunk(header, bytes);
+            merged.addHeader(header);
+            merged.addChunk(dataBuffer, header.getBytesAmount());
             chunkIndex++;
         } while (hasMoreSequenceChunks(upperBound));
     }
@@ -67,5 +70,10 @@ public class ChunksBufferReader implements ChunksReader {
     }
 
     @Override
-    public void deleteResources() {    }
+    public long getDataSize() {
+        return dataSize;
+    }
+
+    @Override
+    public void deleteResources() {}
 }

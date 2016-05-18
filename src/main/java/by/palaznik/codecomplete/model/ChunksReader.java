@@ -11,4 +11,5 @@ public interface ChunksReader {
     void copyChunks(ChunksWriter merged, int upperBound) throws IOException;
     boolean hasMoreChunks();
     void deleteResources();
+    long getDataSize();
 }

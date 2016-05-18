@@ -1,7 +1,5 @@
 package by.palaznik.codecomplete.model;
 
-import java.nio.ByteBuffer;
-
 public class ChunkHeader {
     private int beginNumber;
     private int endNumber;
@@ -25,11 +23,7 @@ public class ChunkHeader {
         return endNumber;
     }
 
-    public boolean isNeighbourWith(ChunkHeader next) {
-        return (next != null) && this.endNumber == next.getBeginNumber() - 1;
-    }
-
     public boolean isNextTo(ChunkHeader previous) {
-        return (previous != null) && this.beginNumber -  1 == previous.getEndNumber();
+        return (previous != null) && this.beginNumber - 1 == previous.getEndNumber();
     }
 }

@@ -8,18 +8,12 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 
 public class ChunksWriterFinal extends ChunksWriter {
-    public ChunksWriterFinal(String dataFileName) {
-        super(dataFileName);
+    public ChunksWriterFinal(String dataFileName, long dataSize) {
+        super(dataFileName, dataSize);
     }
 
     @Override
-    public void addChunk(ChunkHeader header, ByteBuffer input) {
-        int dataSize = header.getBytesAmount();
-        if (dataBuffer.position() + dataSize > MAX_SIZE) {
-            writeBufferedChunks();
-        }
-        copyChunk(header, input);
-    }
+    public void addHeader(ChunkHeader header) {}
 
     @Override
     public void closeFile() {
@@ -28,7 +22,7 @@ public class ChunksWriterFinal extends ChunksWriter {
     }
 
     private void renameFileToMerged() {
-        Path from = Paths.get(fileName);
+        Path from = Paths.get(super.getFileName());
         Path to = Paths.get("merged.txt");
         try {
             Files.move(from, to, StandardCopyOption.REPLACE_EXISTING);

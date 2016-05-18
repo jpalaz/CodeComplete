@@ -2,30 +2,37 @@ package by.palaznik.codecomplete.model;
 
 import org.apache.commons.io.FileUtils;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import java.util.LinkedList;
+import java.util.Queue;
 
 public class ChunksFileReader implements ChunksReader {
     private static final int MAX_SIZE = 1_048_576 * 4;
+    private static final int MAX_HEADERS_SIZE = 1_024 * 1200;
 
     private int chunkIndex;
-    private int size;
-    private int generation;
-    private ByteBuffer bytes;
-//    private ByteBuffer bytesReserve;
+    private final int size;
+    private final int generation;
+    private final long headersPosition;
 
-    private String dataFileName;
-    private FileChannel dataChannel;
-//    private Queue<ChunkHeader> headersBuffer;
+    private ByteBuffer headersBuffer;
+    private final Queue<ByteBuffer> dataBuffers;
+    private ByteBuffer processBuffer;
+
+    private final String dataFileName;
     private ChunkHeader current;
+    private final DataFile file;
 
-    public ChunksFileReader(String dataFileName, int size, int generation) {
+    public ChunksFileReader(String dataFileName, int size, int generation, long headersPosition) {
         this.chunkIndex = 0;
         this.size = size;
         this.dataFileName = dataFileName;
         this.generation = generation;
-//        this.headersBuffer = new LinkedList<>();
+        this.dataBuffers = new LinkedList<>();
+        this.file = new DataFile(dataFileName);
+        this.headersPosition = headersPosition;
     }
 
     @Override
@@ -40,29 +47,20 @@ public class ChunksFileReader implements ChunksReader {
 
     @Override
     public void openResources() {
-        dataChannel = openChannel(dataFileName);
-        bytes = ByteBuffer.allocate(MAX_SIZE);
-        readDataToBuffer(bytes);
-        readData();
+        file.openChannel();
+        headersBuffer = ByteBuffer.allocate(MAX_HEADERS_SIZE);
+        file.readFromChannel(headersBuffer, headersPosition);
+        headersBuffer.flip();
+        setCurrentHeader();
+        processBuffer = makeBuffer();
+        dataBuffers.add(makeBuffer());
     }
 
-    private FileChannel openChannel(String fileName) {
-        FileChannel channel = null;
-        try {
-            channel = new RandomAccessFile(fileName, "rw").getChannel();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        return channel;
-    }
-
-    private void readDataToBuffer(ByteBuffer buffer) {
-        try {
-            dataChannel.read(buffer);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        bytes.flip();
+    private ByteBuffer makeBuffer() {
+        ByteBuffer buffer = ByteBuffer.allocate(MAX_SIZE);
+        file.readFromChannel(buffer);
+        buffer.flip();
+        return buffer;
     }
 
     @Override
@@ -73,48 +71,58 @@ public class ChunksFileReader implements ChunksReader {
         return -1;
     }
 
-    private void readData() {
-        if (bytes.remaining() >= 12) {
-            readNextHeader();
-            if (bytes.remaining() < current.getBytesAmount()) {
-                shiftRemainingBytesToStart();
-                readDataToBuffer(bytes);
-            }
-        } else {
-            shiftRemainingBytesToStart();
-            readDataToBuffer(bytes);
-            readData();
+    private void setCurrentHeader() {
+        if (headersBuffer.remaining() == 0) {
+            headersBuffer.clear();
+            file.readFromChannel(headersBuffer, headersPosition + 12 * (chunkIndex));
+            headersBuffer.flip();
         }
-    }
-
-    private void readNextHeader() {
-        int bytesAmount = bytes.getInt();
-        current = new ChunkHeader(bytes.getInt(), bytes.getInt(), bytesAmount);
-    }
-
-    private void shiftRemainingBytesToStart() {
-        for(int i = bytes.position(), index = 0; i < bytes.limit(); i++, index++) {
-            bytes.put(index, bytes.get(i));
-            bytes.put(i, (byte)0);
-        }
-        bytes.position(bytes.limit() - bytes.position());
+        int bytesAmount = headersBuffer.getInt();
+        current = new ChunkHeader(headersBuffer.getInt(), headersBuffer.getInt(), bytesAmount);
     }
 
     @Override
     public void copyChunks(ChunksWriter merged, int upperBound) throws IOException {
         do {
-            merged.addChunk(current, bytes);
+            merged.addHeader(current);
+            sendBytes(merged);
             chunkIndex++;
             if (!hasMoreChunks()) {
                 current = null;
                 break;
             }
-            readData();
+            setCurrentHeader();
         } while (hasMoreSequenceChunks(upperBound));
+    }
+
+    private void sendBytes(ChunksWriter merged) {
+        int bytesCopied = 0;
+        do {
+            int amount = Math.min(processBuffer.remaining(), current.getBytesAmount() - bytesCopied);
+            merged.addChunk(processBuffer, amount);
+            bytesCopied += amount;
+            if (processBuffer.remaining() == 0) {
+                setNextProcessBuffer();
+            }
+        } while (bytesCopied < current.getBytesAmount());
+    }
+
+    private void setNextProcessBuffer() {
+        ByteBuffer fileBuffer = processBuffer;
+        processBuffer = dataBuffers.poll();
+        fileBuffer.clear();
+        file.readFromChannel(fileBuffer);
+        fileBuffer.flip();
+        dataBuffers.add(fileBuffer);
     }
 
     private boolean hasMoreSequenceChunks(int upperBound) {
         return (getCurrentNumber() < upperBound) || upperBound == -1;
+    }
+
+    @Override
+    public long getDataSize() {
+        return headersPosition;
     }
 
     @Override
@@ -124,17 +132,7 @@ public class ChunksFileReader implements ChunksReader {
 
     @Override
     public void deleteResources() {
-        closeChannel(dataChannel);
+        file.closeChannel();
         FileUtils.deleteQuietly(new File(dataFileName));
-    }
-
-    private static void closeChannel(FileChannel channel) {
-        try {
-            if (channel != null) {
-                channel.close();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 }
