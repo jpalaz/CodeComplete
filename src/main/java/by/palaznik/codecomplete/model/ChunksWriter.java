@@ -1,51 +1,28 @@
 package by.palaznik.codecomplete.model;
 
-import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.util.LinkedList;
-import java.util.Queue;
 
 public class ChunksWriter {
-    private static final int MAX_SIZE = 1_048_576 * 4;
-    private static final int MAX_HEADERS_SIZE = 1_024 * 512 * 3;
-
-    private String fileName;
     private int headersAmount;
     private int headersBuffered;
 
-    private Queue<ByteBuffer> buffers;
     private ByteBuffer processBuffer;
-    private ByteBuffer writingBuffer;
     private ByteBuffer headersBuffer;
 
     private ChunkHeader previous;
-    private long headerPosition;
-    private FileChannel dataChannel;
+    private final BufferedWriter bufferedWriter;
 
     public ChunksWriter(String fileName, long dataSize) {
-        this.fileName = fileName;
         this.headersAmount = 0;
         this.headersBuffered = 0;
-        this.headerPosition = dataSize - 12;
         this.previous = new ChunkHeader(Integer.MAX_VALUE, Integer.MAX_VALUE, 0);
-        this.buffers = new LinkedList<>();
-        this.processBuffer = ByteBuffer.allocate(MAX_SIZE);
-        this.writingBuffer = ByteBuffer.allocate(MAX_SIZE);
-        this.headersBuffer = ByteBuffer.allocate(MAX_HEADERS_SIZE);
+        this.bufferedWriter = new BufferedWriter(fileName, 5, dataSize - 12);
     }
 
-    public String getFileName() {
-        return fileName;
-    }
-
-    public void openFile() {
-        try {
-            dataChannel = new RandomAccessFile(fileName, "rw").getChannel();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    public void openResources() {
+        bufferedWriter.openResources();
+        headersBuffer = bufferedWriter.getNextHeaderBuffer();
+        processBuffer = bufferedWriter.getNextProcessBuffer();
     }
 
     public void addHeader(ChunkHeader header) {
@@ -70,10 +47,8 @@ public class ChunksWriter {
     }
 
     private void writeBufferedHeaders() {
-        headersBuffer.flip();
-        writeToChannel(headersBuffer, headerPosition);
-        headerPosition += 12 * headersBuffered;
-        headersBuffer.clear();
+        bufferedWriter.writeNextHeaderBuffer(headersBuffer, headersBuffered);
+        headersBuffer = bufferedWriter.getNextHeaderBuffer();
         headersBuffered = 0;
     }
 
@@ -84,7 +59,8 @@ public class ChunksWriter {
             copyBytes(input, amount);
             bytesCopied += amount;
             if (processBuffer.remaining() == 0) {
-                writeBufferedData();
+                bufferedWriter.writeNextProcessBuffer(processBuffer);
+                processBuffer = bufferedWriter.getNextProcessBuffer();
             }
         } while (bytesCopied < bytesAmount);
     }
@@ -99,46 +75,11 @@ public class ChunksWriter {
     public void flush() {
         copyPreviousHeader();
         writeBufferedHeaders();
-        writeBufferedData();
-    }
-
-    private void writeBufferedData() {
-        buffers.add(writingBuffer);
-        writingBuffer = processBuffer;
-        processBuffer = buffers.poll();
-        writingBuffer.flip();
-        writeToChannel(writingBuffer);
-        writingBuffer.clear();
-    }
-
-    private void writeToChannel(ByteBuffer buffer) {
-        try {
-            dataChannel.write(buffer);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void writeToChannel(ByteBuffer buffer, long position) {
-        try {
-            dataChannel.write(buffer, position);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        bufferedWriter.writeNextProcessBuffer(processBuffer);
     }
 
     public void closeFile() {
-        closeChannel();
-    }
-
-    private void closeChannel() {
-        try {
-            if (dataChannel != null) {
-                dataChannel.close();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        bufferedWriter.closeChannel();
     }
 
     public int getHeadersAmount() {

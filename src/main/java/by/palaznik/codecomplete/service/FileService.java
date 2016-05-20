@@ -1,183 +1,99 @@
 package by.palaznik.codecomplete.service;
 
-import by.palaznik.codecomplete.model.*;
-import org.apache.commons.codec.digest.DigestUtils;
+import by.palaznik.codecomplete.model.AsyncBuffer;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.*;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.locks.ReentrantLock;
 
-public class FileService {
-    private static final int MAX_SIZE = 1_048_576 * 8;
-    private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
+public class FileService implements Runnable {
 
-    private static List<Chunk> bufferedChunks = new ArrayList<>();
-    private static Deque<ChunksReader> chunksReaders = new LinkedList<>();
+    private static FileService instance = null;
+    private static ReentrantLock lock = new ReentrantLock();
 
-    private static int count = 0;
-    private static int dataSize = 0;
-    private static int end = -1;
-    private static int fileNumber = 0;
+    private boolean running;
+    private final Queue<AsyncBuffer> buffers;
 
-    public static boolean checkHash(Chunk chunk, String hash) {
-        String dataHash = DigestUtils.md5Hex(chunk.getData());
-        return hash.equals(dataHash);
+    private FileService() {
+        this.buffers = new ConcurrentLinkedQueue<>();
     }
 
-    public static void setEndIfLast(Chunk chunk) {
-        if (chunk.isLast()) {
-            end = chunk.getNumber();
+    public static FileService getInstance() {
+        lock.lock();
+        if (instance == null) {
+            instance = new FileService();
+            Thread thread =  new Thread(instance);
+            thread.start();
+            instance.setRunning(true);
+        }
+        lock.unlock();
+        return instance;
+    }
+
+    public void addBuffer(AsyncBuffer buffer) {
+        synchronized (buffers) {
+            buffers.add(buffer);
+            buffers.notify();
         }
     }
 
-    public static void addToBuffer(Chunk chunk) {
-        bufferedChunks.add(chunk);
-        count++;
-        dataSize += chunk.getData().length;
-        boolean isEndOfChunks = (count - 1 == end);
-        if (isFullBuffer() || isEndOfChunks) {
-            writeBuffer();
-            if (isEndOfChunks) {
-                mergeFilesForFinal();
-                count = 0;
+    @Override
+    public void run() {
+        while (isRunning()) {
+            processBuffers();
+        }
+    }
+
+    private void processBuffers() {
+        while (!buffers.isEmpty()) {
+            AsyncBuffer buffer = buffers.poll();
+            if (buffer.isReading()) {
+                read(buffer);
             } else {
-                mergeFilesWithSameGenerations();
+                write(buffer);
+            }
+            synchronized (buffer) {
+                buffer.setCompleted(true);
+                buffer.notify();
+            }
+        }
+        synchronized (buffers) {
+            if (buffers.isEmpty()) {
+                waitNextBuffers();
             }
         }
     }
 
-    private static boolean isFullBuffer() {
-        return dataSize >= MAX_SIZE;
-    }
-
-    private static void writeBuffer() {
+    private void read(AsyncBuffer buffer) {
         try {
-            writeToFile();
+            buffer.getChannel().read(buffer.getBuffer(), buffer.getPosition());
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    private static void writeToFile() throws IOException {
-        ByteBuffer dataBuffer = ByteBuffer.allocate(dataSize);
-        writeChunksToBuffer(dataBuffer);
-        chunksReaders.addLast(new ChunksBufferReader(bufferedChunks, dataBuffer, dataSize));
-        dataSize = 0;
-        bufferedChunks = new ArrayList<>();
-    }
-
-    private static void writeChunksToBuffer(ByteBuffer dataBuffer) {
-        sortChunks();
-        for (Chunk chunk : bufferedChunks) {
-            dataBuffer.put(chunk.getData());
-        }
-        dataBuffer.flip();
-    }
-
-    private static void sortChunks() {
-        Collections.sort(bufferedChunks, chunkComparator);
-    }
-
-    private static void mergeFilesWithSameGenerations() {
-        while (hasSameGenerations()) {
-            ChunksReader first = getChunksReader();
-            ChunksReader second = getChunksReader();
-            merge(first, second);
-            first.deleteResources();
-            second.deleteResources();
+    private void write(AsyncBuffer buffer) {
+        try {
+            buffer.getChannel().write(buffer.getBuffer(), buffer.getPosition());
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
-    private static boolean hasSameGenerations() {
-        if (chunksReaders.size() < 2) {
-            return false;
+    private void waitNextBuffers() {
+        try {
+            buffers.wait();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
         }
-        ChunksReader last = chunksReaders.pollLast();
-        boolean sameGenerations = false;
-        if (last.equalGenerationWith(chunksReaders.peekLast())) {
-            sameGenerations = true;
-        }
-        chunksReaders.addLast(last);
-        return sameGenerations;
     }
 
-    private static ChunksReader getChunksReader() {
-        ChunksReader reader = chunksReaders.pollLast();
-        reader.openResources();
-        return reader;
+    public boolean isRunning() {
+        return running;
     }
 
-    private static void merge(ChunksReader first, ChunksReader second) {
-        String fileName = fileNumber++ + ".txt";
-        long dataSize = first.getDataSize() + second.getDataSize();
-        int chunksAmount = mergeToFile(first, second, new ChunksWriter(fileName, dataSize));
-        chunksReaders.add(new ChunksFileReader(fileName, chunksAmount, first.getGeneration() + 1, dataSize));
-    }
-
-    private static int mergeToFile(ChunksReader first, ChunksReader second, ChunksWriter merged) {
-        int firstNumber = first.getCurrentNumber();
-        int secondNumber = second.getCurrentNumber();
-        boolean isMainSequence = firstNumber < secondNumber;
-        merged.openFile();
-        while (first.hasMoreChunks() || second.hasMoreChunks()) {
-            if (isMainSequence) {
-                firstNumber = copyChunks(merged, first, secondNumber);
-            } else {
-                secondNumber = copyChunks(merged, second, firstNumber);
-            }
-            isMainSequence = !isMainSequence;
-        }
-        merged.flush();
-        merged.closeFile();
-        return merged.getHeadersAmount();
-    }
-
-    private static int copyChunks(ChunksWriter merged, ChunksReader current, int upperBound) {
-        current.copyChunks(merged, upperBound);
-        return current.getCurrentNumber();
-    }
-
-    private static void mergeFilesForFinal() {
-        Map<Integer, ChunksReader> readers = new TreeMap<>();
-        long dataSize = 0;
-        int minNumber = Integer.MAX_VALUE;
-        while (!chunksReaders.isEmpty()) {
-            ChunksReader reader = chunksReaders.pollFirst();
-            reader.openResources();
-            int number = reader.getCurrentNumber();
-            readers.put(number, reader);
-            dataSize += reader.getDataSize();
-            if (number < minNumber) {
-                minNumber = number;
-            }
-        }
-        String fileName = fileNumber++ + ".txt";
-        mergeToFile(readers, new ChunksWriterFinal(fileName, dataSize), minNumber);
-    }
-
-    private static void mergeToFile(Map<Integer, ChunksReader> readers, ChunksWriter merged, int minNumber) {
-        merged.openFile();
-        int upperBound;
-        int number;
-        while (!readers.isEmpty()) {
-            ChunksReader current = readers.remove(minNumber);
-            upperBound = getNextNumber(readers);
-            number = copyChunks(merged, current, upperBound);
-            minNumber = upperBound;
-            if (number != -1) {
-                readers.put(number, current);
-            } else {
-                current.deleteResources();
-            }
-        }
-        merged.flush();
-        merged.closeFile();
-    }
-
-    private static int getNextNumber(Map<Integer, ChunksReader> readers) {
-        if (readers.isEmpty()) {
-            return -1;
-        }
-        return readers.keySet().iterator().next();
+    public void setRunning(boolean running) {
+        this.running = running;
     }
 }

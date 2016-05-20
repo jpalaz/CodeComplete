@@ -7,38 +7,38 @@ import org.junit.Test;
 
 import java.io.*;
 import java.util.Base64;
-import java.util.StringTokenizer;
 
 import static by.palaznik.codecomplete.controller.FileServletTest.*;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 
-public class FileServiceTest {
+public class ChunksServiceTest {
 
     private MemoryCheck memory;
     private Thread thread;
 
     @Before
     public void setUp() throws Exception {
-     /*   memory = new MemoryCheck();
+        memory = new MemoryCheck();
         thread = new Thread(memory);
         thread.start();
-  */  }
+    }
 
     @Test
 //    @Ignore
     public void sendChunks() throws Exception {
-        testChunks(25_000_000, true);
+        testChunks(20_000_000, true);
     }
 
     @Test
     @Ignore
     public void sendChunksNotShuffled() throws Exception {
-        testChunks(5_000_000, false);
+        testChunks(1_000_000, false);
     }
 
     private void testChunks(int amount, boolean shuffle) {
         sendChunks(amount, shuffle);
-//        endMemoryCheck();
+        endMemoryCheck();
         testValues(amount);
     }
 
@@ -48,6 +48,7 @@ public class FileServiceTest {
             int i = 0;
             while ((line = reader.readLine()) != null ) {
                 int spaceIndex = line.indexOf(" ");
+                assertNotEquals(-1, spaceIndex);
                 int number = Integer.valueOf(line.substring(0, spaceIndex));
                 assertEquals(i, number);
                 i++;
@@ -69,8 +70,8 @@ public class FileServiceTest {
                 isLast = true;
             }
             Chunk chunk = new Chunk(number, dataBase64, isLast);
-            FileService.setEndIfLast(chunk);
-            FileService.addToBuffer(chunk);
+            ChunksService.setEndIfLast(chunk);
+            ChunksService.addToBuffer(chunk);
         }
     }
 

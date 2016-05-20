@@ -1,7 +1,7 @@
 package by.palaznik.codecomplete.controller;
 
 import by.palaznik.codecomplete.model.Chunk;
-import by.palaznik.codecomplete.service.FileService;
+import by.palaznik.codecomplete.service.ChunksService;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -26,9 +26,9 @@ public class FileServlet extends HttpServlet {
         response.setCharacterEncoding("utf-8");
         PrintWriter out = response.getWriter();
 
-        if (FileService.checkHash(chunk, hash)) {
-            FileService.setEndIfLast(chunk);
-            FileService.addToBuffer(chunk);
+        if (ChunksService.checkHash(chunk, hash)) {
+            ChunksService.setEndIfLast(chunk);
+            ChunksService.addToBuffer(chunk);
             out.print("OK");
         } else {
             out.print("REPEAT");

@@ -12,13 +12,13 @@ public class ChunksFileReader implements ChunksReader {
     private ByteBuffer processBuffer;
 
     private ChunkHeader current;
-    private final BufferedFile bufferedFile;
+    private final BufferedReader bufferedReader;
 
-    public ChunksFileReader(String dataFileName, int size, int generation, long headersPosition) {
+    public ChunksFileReader(String fileName, int size, int generation, long headersPosition) {
         this.chunkIndex = 0;
         this.size = size;
         this.generation = generation;
-        this.bufferedFile = new BufferedFile(dataFileName, 2, headersPosition);
+        this.bufferedReader = new BufferedReader(fileName, 5, headersPosition);
         this.headersStartPosition = headersPosition;
     }
 
@@ -29,14 +29,14 @@ public class ChunksFileReader implements ChunksReader {
 
     @Override
     public boolean equalGenerationWith(ChunksReader reader) {
-        return false;//(this.generation < 3) && (this.generation == reader.getGeneration());
+        return (this.generation < 2) && (this.generation == reader.getGeneration());
     }
 
     @Override
     public void openResources() {
-        bufferedFile.openResources();
-        headersBuffer = bufferedFile.getFirstHeaderBuffer();
-        processBuffer = bufferedFile.getFirstProcessBuffer();
+        bufferedReader.openResources();
+        headersBuffer = bufferedReader.getNextHeaderBuffer();
+        processBuffer = bufferedReader.getNextProcessBuffer();
         setCurrentHeader();
     }
 
@@ -50,7 +50,8 @@ public class ChunksFileReader implements ChunksReader {
 
     private void setCurrentHeader() {
         if (headersBuffer.remaining() == 0) {
-            headersBuffer = bufferedFile.getNextHeaderBuffer(headersBuffer);
+            bufferedReader.readNextHeaderBuffer(headersBuffer);
+            headersBuffer = bufferedReader.getNextHeaderBuffer();
         }
         int bytesAmount = headersBuffer.getInt();
         current = new ChunkHeader(headersBuffer.getInt(), headersBuffer.getInt(), bytesAmount);
@@ -79,7 +80,8 @@ public class ChunksFileReader implements ChunksReader {
             merged.addChunk(processBuffer, amount);
             bytesCopied += amount;
             if (processBuffer.remaining() == 0) {
-                processBuffer = bufferedFile.getNextProcessBuffer(processBuffer);
+                bufferedReader.readNextProcessBuffer(processBuffer);
+                processBuffer = bufferedReader.getNextProcessBuffer();
             }
         } while (bytesCopied < bytesAmount);
     }
@@ -101,6 +103,6 @@ public class ChunksFileReader implements ChunksReader {
 
     @Override
     public void deleteResources() {
-        bufferedFile.deleteResources();
+        bufferedReader.deleteResources();
     }
 }
