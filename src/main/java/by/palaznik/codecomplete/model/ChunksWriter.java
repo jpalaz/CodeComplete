@@ -9,7 +9,7 @@ import java.util.Queue;
 
 public class ChunksWriter {
     private static final int MAX_SIZE = 1_048_576 * 4;
-    private static final int MAX_HEADERS_SIZE = 1_024 * 1200;
+    private static final int MAX_HEADERS_SIZE = 1_024 * 512 * 3;
 
     private String fileName;
     private int headersAmount;
@@ -90,9 +90,10 @@ public class ChunksWriter {
     }
 
     private void copyBytes(ByteBuffer input, int bytesAmount) {
-        for (int i = 0; i < bytesAmount; i++) {
-            processBuffer.put(input.get());
-        }
+        int limit = input.limit();
+        input.limit(input.position() + bytesAmount);
+        processBuffer.put(input);
+        input.limit(limit);
     }
 
     public void flush() {

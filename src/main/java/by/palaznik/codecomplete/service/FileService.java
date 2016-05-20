@@ -8,7 +8,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 
 public class FileService {
-    private static final int MAX_SIZE = 1_048_576 * 16;
+    private static final int MAX_SIZE = 1_048_576 * 8;
     private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
 
     private static List<Chunk> bufferedChunks = new ArrayList<>();
@@ -39,6 +39,7 @@ public class FileService {
             writeBuffer();
             if (isEndOfChunks) {
                 mergeFilesForFinal();
+                count = 0;
             } else {
                 mergeFilesWithSameGenerations();
             }
@@ -77,35 +78,14 @@ public class FileService {
         Collections.sort(bufferedChunks, chunkComparator);
     }
 
-    private static void mergeFilesForFinal() {
-        count = 0;
-        boolean isFinal = false;
-        while (chunksReaders.size() > 1) {
-            if (chunksReaders.size() == 2) {
-                isFinal = true;
-            }
-            mergeFiles(isFinal);
-        }
-    }
-
     private static void mergeFilesWithSameGenerations() {
         while (hasSameGenerations()) {
-            mergeFiles(false);
+            ChunksReader first = getChunksReader();
+            ChunksReader second = getChunksReader();
+            merge(first, second);
+            first.deleteResources();
+            second.deleteResources();
         }
-    }
-
-    private static void mergeFiles(boolean isFinal) {
-        ChunksReader first = getChunksReader();
-        ChunksReader second = getChunksReader();
-        merge(first, second, isFinal);
-        first.deleteResources();
-        second.deleteResources();
-    }
-
-    private static ChunksReader getChunksReader() {
-        ChunksReader reader = chunksReaders.pollLast();
-        reader.openResources();
-        return reader;
     }
 
     private static boolean hasSameGenerations() {
@@ -121,22 +101,20 @@ public class FileService {
         return sameGenerations;
     }
 
-    private static void merge(ChunksReader first, ChunksReader second, boolean isFinal) {
-        String fileName = fileNumber++ + ".txt";
-        try {
-            long dataSize = first.getDataSize() + second.getDataSize();
-            if (isFinal) {
-                mergeToFile(first, second, new ChunksWriterFinal(fileName, dataSize));
-            } else {
-                int chunksAmount = mergeToFile(first, second, new ChunksWriter(fileName, dataSize));
-                chunksReaders.add(new ChunksFileReader(fileName, chunksAmount, first.getGeneration() + 1, dataSize));
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+    private static ChunksReader getChunksReader() {
+        ChunksReader reader = chunksReaders.pollLast();
+        reader.openResources();
+        return reader;
     }
 
-    private static int mergeToFile(ChunksReader first, ChunksReader second, ChunksWriter merged) throws IOException {
+    private static void merge(ChunksReader first, ChunksReader second) {
+        String fileName = fileNumber++ + ".txt";
+        long dataSize = first.getDataSize() + second.getDataSize();
+        int chunksAmount = mergeToFile(first, second, new ChunksWriter(fileName, dataSize));
+        chunksReaders.add(new ChunksFileReader(fileName, chunksAmount, first.getGeneration() + 1, dataSize));
+    }
+
+    private static int mergeToFile(ChunksReader first, ChunksReader second, ChunksWriter merged) {
         int firstNumber = first.getCurrentNumber();
         int secondNumber = second.getCurrentNumber();
         boolean isMainSequence = firstNumber < secondNumber;
@@ -154,8 +132,52 @@ public class FileService {
         return merged.getHeadersAmount();
     }
 
-    private static int copyChunks(ChunksWriter merged, ChunksReader current, int upperBound) throws IOException {
+    private static int copyChunks(ChunksWriter merged, ChunksReader current, int upperBound) {
         current.copyChunks(merged, upperBound);
         return current.getCurrentNumber();
+    }
+
+    private static void mergeFilesForFinal() {
+        Map<Integer, ChunksReader> readers = new TreeMap<>();
+        long dataSize = 0;
+        int minNumber = Integer.MAX_VALUE;
+        while (!chunksReaders.isEmpty()) {
+            ChunksReader reader = chunksReaders.pollFirst();
+            reader.openResources();
+            int number = reader.getCurrentNumber();
+            readers.put(number, reader);
+            dataSize += reader.getDataSize();
+            if (number < minNumber) {
+                minNumber = number;
+            }
+        }
+        String fileName = fileNumber++ + ".txt";
+        mergeToFile(readers, new ChunksWriterFinal(fileName, dataSize), minNumber);
+    }
+
+    private static void mergeToFile(Map<Integer, ChunksReader> readers, ChunksWriter merged, int minNumber) {
+        merged.openFile();
+        int upperBound;
+        int number;
+        while (!readers.isEmpty()) {
+            ChunksReader current = readers.remove(minNumber);
+            upperBound = getNextNumber(readers);
+            number = copyChunks(merged, current, upperBound);
+            minNumber = upperBound;
+            if (number != -1) {
+                readers.put(number, current);
+            } else {
+                current.deleteResources();
+            }
+        }
+        merged.flush();
+        merged.closeFile();
+    }
+
+    private static int getNextNumber(Map<Integer, ChunksReader> readers) {
+        if (readers.isEmpty()) {
+            return -1;
+        }
+        return readers.keySet().iterator().next();
     }
 }
