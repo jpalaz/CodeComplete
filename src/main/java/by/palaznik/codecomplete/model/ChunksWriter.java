@@ -16,7 +16,7 @@ public class ChunksWriter {
         this.headersAmount = 0;
         this.headersBuffered = 0;
         this.previous = new ChunkHeader(Integer.MAX_VALUE, Integer.MAX_VALUE, 0);
-        this.bufferedWriter = new BufferedWriter(fileName, 5, dataSize - 12);
+        this.bufferedWriter = new BufferedWriter(fileName, 10, dataSize - 12);
     }
 
     public void openResources() {
@@ -52,24 +52,18 @@ public class ChunksWriter {
         headersBuffered = 0;
     }
 
-    public void addChunk(ByteBuffer input, int bytesAmount) {
+    public void addBytes(byte[] bytes) {
         int bytesCopied = 0;
+        int length = bytes.length;
         do {
-            int amount = Math.min(processBuffer.remaining(), bytesAmount - bytesCopied);
-            copyBytes(input, amount);
+            int amount = Math.min(processBuffer.remaining(), length - bytesCopied);
+            processBuffer.put(bytes, bytesCopied, amount);
             bytesCopied += amount;
             if (processBuffer.remaining() == 0) {
                 bufferedWriter.writeNextProcessBuffer(processBuffer);
                 processBuffer = bufferedWriter.getNextProcessBuffer();
             }
-        } while (bytesCopied < bytesAmount);
-    }
-
-    private void copyBytes(ByteBuffer input, int bytesAmount) {
-        int limit = input.limit();
-        input.limit(input.position() + bytesAmount);
-        processBuffer.put(input);
-        input.limit(limit);
+        } while (bytesCopied < length);
     }
 
     public void flush() {

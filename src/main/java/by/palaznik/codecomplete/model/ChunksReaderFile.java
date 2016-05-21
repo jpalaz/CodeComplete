@@ -2,7 +2,7 @@ package by.palaznik.codecomplete.model;
 
 import java.nio.ByteBuffer;
 
-public class ChunksFileReader implements ChunksReader {
+public class ChunksReaderFile implements ChunksReader {
     private int chunkIndex;
     private final int size;
     private final int generation;
@@ -14,12 +14,17 @@ public class ChunksFileReader implements ChunksReader {
     private ChunkHeader current;
     private final BufferedReader bufferedReader;
 
-    public ChunksFileReader(String fileName, int size, int generation, long headersPosition) {
+    public ChunksReaderFile(String fileName, int size, int generation, long headersPosition) {
         this.chunkIndex = 0;
         this.size = size;
         this.generation = generation;
         this.bufferedReader = new BufferedReader(fileName, 5, headersPosition);
         this.headersStartPosition = headersPosition;
+    }
+
+    @Override
+    public int compareTo(ChunksReader o) {
+        return this.getGeneration() - o.getGeneration();
     }
 
     @Override
@@ -29,7 +34,7 @@ public class ChunksFileReader implements ChunksReader {
 
     @Override
     public boolean equalGenerationWith(ChunksReader reader) {
-        return (this.generation < 2) && (this.generation == reader.getGeneration());
+        return (this.generation < 3) && (this.generation == reader.getGeneration());
     }
 
     @Override
@@ -77,7 +82,9 @@ public class ChunksFileReader implements ChunksReader {
         int bytesCopied = 0;
         do {
             int amount = Math.min(processBuffer.remaining(), bytesAmount - bytesCopied);
-            merged.addChunk(processBuffer, amount);
+            byte[] bytes = new byte[amount];
+            processBuffer.get(bytes);
+            merged.addBytes(bytes);
             bytesCopied += amount;
             if (processBuffer.remaining() == 0) {
                 bufferedReader.readNextProcessBuffer(processBuffer);

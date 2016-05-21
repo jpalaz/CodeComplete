@@ -13,8 +13,8 @@ import java.util.Queue;
 import java.util.concurrent.Future;
 
 public class BufferedReader {
-    private static final int MAX_SIZE = 1_024 * 16;//1_048_576 * 4;
-    private static final int MAX_HEADERS_SIZE = 1_024 * 3;
+    private static final int MAX_SIZE = 1_024 * 8;//1_048_576 * 4;
+    private static final int MAX_HEADERS_SIZE = 1_024 * 12;
 
     private long headersPosition;
     private long dataPosition;
@@ -71,7 +71,7 @@ public class BufferedReader {
     private AsyncBuffer makeBuffer(int maxSize, long position) {
         ByteBuffer buffer = ByteBuffer.allocate(maxSize);
         AsyncBuffer asyncBuffer = new AsyncBuffer(buffer, channel, position, true);
-        fileService.addBuffer(asyncBuffer);
+        fileService.addReadBuffer(asyncBuffer);
         return asyncBuffer;
     }
 
@@ -88,7 +88,7 @@ public class BufferedReader {
     private void readNextBuffer(ByteBuffer filledBuffer, Queue<AsyncBuffer> buffers, long position) {
         filledBuffer.clear();
         AsyncBuffer asyncBuffer = new AsyncBuffer(filledBuffer, channel, position, true);
-        fileService.addBuffer(asyncBuffer);
+        fileService.addReadBuffer(asyncBuffer);
         buffers.add(asyncBuffer);
     }
 
@@ -100,13 +100,17 @@ public class BufferedReader {
         return getNextBuffer(dataBuffers);
     }
 
+    public static long wait;
+
     private ByteBuffer getNextBuffer(Queue<AsyncBuffer> buffers) {
         AsyncBuffer asyncBuffer = buffers.poll();
         try {
             synchronized (asyncBuffer) {
+                long start = System.currentTimeMillis();
                 while (!asyncBuffer.isCompleted()) {
                     asyncBuffer.wait();
                 }
+                wait += System.currentTimeMillis() - start;
             }
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -128,6 +132,7 @@ public class BufferedReader {
         while (!headersBuffers.isEmpty()) {
             getNextBuffer(headersBuffers);
         }
+        System.out.println("Wait readingBuffer to close: " + wait);
         try {
             if (channel != null) {
                 channel.close();

@@ -3,15 +3,21 @@ package by.palaznik.codecomplete.model;
 import java.nio.ByteBuffer;
 import java.util.*;
 
-public class ChunksBufferReader implements ChunksReader {
+public class ChunksReaderBuffer implements ChunksReader {
     private final List<Chunk> bufferedChunks;
     private int chunkIndex;
     private final int size;
     private final int generation;
     private final int dataSize;
     private final ByteBuffer dataBuffer;
+//    private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
 
-    public ChunksBufferReader(List<Chunk> bufferedChunks, ByteBuffer dataBuffer, int dataSize) {
+    @Override
+    public int compareTo(ChunksReader o) {
+        return this.getGeneration() - o.getGeneration();
+    }
+
+    public ChunksReaderBuffer(List<Chunk> bufferedChunks, ByteBuffer dataBuffer, int dataSize) {
         this.chunkIndex = 0;
         this.size = bufferedChunks.size();
         this.generation = 0;
@@ -31,7 +37,13 @@ public class ChunksBufferReader implements ChunksReader {
     }
 
     @Override
-    public void openResources() {}
+    public void openResources() {
+        /*Collections.sort(bufferedChunks, chunkComparator);
+        for (Chunk chunk : bufferedChunks) {
+            dataBuffer.put(chunk.getData());
+        }
+        dataBuffer.flip();*/
+    }
 
     @Override
     public int getCurrentNumber() {
@@ -51,13 +63,17 @@ public class ChunksBufferReader implements ChunksReader {
 
     @Override
     public void copyChunks(ChunksWriter merged, int upperBound) {
+        int bytesAmount = 0;
         do {
             Chunk chunk = getCurrentChunk();
             ChunkHeader header = new ChunkHeader(chunk.getNumber(), chunk.getNumber(), chunk.getData().length);
             merged.addHeader(header);
-            merged.addChunk(dataBuffer, header.getBytesAmount());
+            bytesAmount += header.getBytesAmount();
             chunkIndex++;
         } while (hasMoreSequenceChunks(upperBound));
+        byte[] bytes = new byte[bytesAmount];
+        dataBuffer.get(bytes);
+        merged.addBytes(bytes);
     }
 
     private boolean hasMoreSequenceChunks(int upperBound) {

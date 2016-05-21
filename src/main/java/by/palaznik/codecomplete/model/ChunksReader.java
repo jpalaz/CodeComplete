@@ -1,6 +1,6 @@
 package by.palaznik.codecomplete.model;
 
-public interface ChunksReader {
+public interface ChunksReader extends Comparable<ChunksReader> {
 
     int getGeneration();
     boolean equalGenerationWith(ChunksReader reader);
