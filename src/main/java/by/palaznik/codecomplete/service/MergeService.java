@@ -4,20 +4,20 @@ import by.palaznik.codecomplete.model.*;
 
 import java.util.*;
 
-import static java.lang.Math.max;
-
 public class MergeService implements Runnable {
 
-    private PriorityQueue<ChunksReader> chunksReaders;
+    private List<ChunksReader> chunksReaders;
 
     private boolean running;
     private ChunksReader[] forMerge;
     private Thread thread;
     private int fileNumber;
     private boolean waiting;
+    private int currentReader;
 
     private MergeService() {
-        this.chunksReaders = new PriorityQueue<>();
+        this.chunksReaders = new LinkedList<>();
+        this.currentReader = 0;
         this.running = true;
         this.forMerge = new ChunksReader[2];
         this.fileNumber = 0;
@@ -43,15 +43,15 @@ public class MergeService implements Runnable {
                     waitMoreReadersForMerge();
                 }
             }
-            while (hasSameGenerations()) {
-                ChunksReader reader = merge(forMerge[0], forMerge[1], "merge" + fileNumber++ + ".txt");
-                chunksReaders.add(reader);
+            if (hasSameGenerations()) {
+                ChunksReader reader = merge(forMerge[0], forMerge[1], "merge" + fileNumber++ + ".txt", true);
+                chunksReaders.add(currentReader, reader);
                 forMerge[0].deleteResources();
                 forMerge[1].deleteResources();
-                synchronized (this) {
-                    if (waiting) {
-                        waitMoreReadersForMerge();
-                    }
+            }
+            synchronized (this) {
+                while (waiting) {
+                    waitMoreReadersForMerge();
                 }
             }
         }
@@ -67,7 +67,9 @@ public class MergeService implements Runnable {
 
     public void stop(List<ChunksReader> bufferReaders) {
         synchronized (this) {
+            this.waiting = false;
             this.running = false;
+            this.notify();
         }
         try {
             thread.join();
@@ -79,27 +81,32 @@ public class MergeService implements Runnable {
     }
 
     private synchronized boolean hasSameGenerations() {
-        System.out.println("HasSameGens: " + chunksReaders.size());
-        if (chunksReaders.size() < 2 || chunksReaders.peek().getGeneration() > 3) {
+        if (chunksReaders.size() < 2) {
             return false;
         }
-        forMerge[0] = chunksReaders.poll();
-        System.out.println("Generation: " + forMerge[0].getGeneration());
-        forMerge[1] = chunksReaders.poll();
-        /*boolean sameGenerations = true;
-        if (!forMerge[0].equalGenerationWith(forMerge[1])) {
-            sameGenerations = false;
-            chunksReaders.add(forMerge[0]);
-        }*/
-        return true;
+        if (currentReader == 0) {
+            currentReader = chunksReaders.size() - 1;
+        }
+        forMerge[0] = chunksReaders.get(currentReader);
+        forMerge[1] = chunksReaders.get(currentReader - 1);
+        boolean sameGenerations = false;
+        if (forMerge[0].equalGenerationWith(forMerge[1])) {
+            sameGenerations = true;
+            chunksReaders.remove(currentReader);
+            currentReader--;
+            chunksReaders.remove(currentReader);
+        } else if (currentReader + 1 < chunksReaders.size()) {
+            currentReader++;
+        }
+        return sameGenerations;
     }
 
-    public static ChunksReader merge(ChunksReader first, ChunksReader second, String fileName) {
+    public static ChunksReader merge(ChunksReader first, ChunksReader second, String fileName, boolean background) {
         first.openResources();
         second.openResources();
         int generation = Math.max(first.getGeneration(), second.getGeneration()) + 1;
         long dataSize = first.getDataSize() + second.getDataSize();
-        int chunksAmount = mergeToFile(first, second, new ChunksWriter(fileName, dataSize));
+        int chunksAmount = mergeToFile(first, second, new ChunksWriter(fileName, dataSize, background));
         return new ChunksReaderFile(fileName, chunksAmount, generation, dataSize);
     }
 
@@ -126,7 +133,7 @@ public class MergeService implements Runnable {
         return current.getCurrentNumber();
     }
 
-    public static void mergeFilesForFinal(Queue<ChunksReader> chunksReaders) {
+    public static void mergeFilesForFinal(List<ChunksReader> chunksReaders) {
         System.out.println("Start final merge");
         Map<Integer, ChunksReader> readers = new TreeMap<>();
         long dataSize = 0;

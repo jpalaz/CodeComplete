@@ -18,7 +18,7 @@ public class ChunksReaderFile implements ChunksReader {
         this.chunkIndex = 0;
         this.size = size;
         this.generation = generation;
-        this.bufferedReader = new BufferedReader(fileName, 5, headersPosition);
+        this.bufferedReader = new BufferedReader(fileName, 5, headersPosition, true);
         this.headersStartPosition = headersPosition;
     }
 
@@ -34,7 +34,7 @@ public class ChunksReaderFile implements ChunksReader {
 
     @Override
     public boolean equalGenerationWith(ChunksReader reader) {
-        return (this.generation < 3) && (this.generation == reader.getGeneration());
+        return (this.generation < 5) && (this.generation == reader.getGeneration());
     }
 
     @Override

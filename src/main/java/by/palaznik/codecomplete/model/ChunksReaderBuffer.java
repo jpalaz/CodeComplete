@@ -10,7 +10,6 @@ public class ChunksReaderBuffer implements ChunksReader {
     private final int generation;
     private final int dataSize;
     private final ByteBuffer dataBuffer;
-//    private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
 
     @Override
     public int compareTo(ChunksReader o) {
@@ -37,13 +36,7 @@ public class ChunksReaderBuffer implements ChunksReader {
     }
 
     @Override
-    public void openResources() {
-        /*Collections.sort(bufferedChunks, chunkComparator);
-        for (Chunk chunk : bufferedChunks) {
-            dataBuffer.put(chunk.getData());
-        }
-        dataBuffer.flip();*/
-    }
+    public void openResources() {}
 
     @Override
     public int getCurrentNumber() {

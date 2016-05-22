@@ -10,20 +10,21 @@ import java.util.LinkedList;
 import java.util.Queue;
 
 public class BufferedWriter {
-    private static final int MAX_SIZE = 1024 * 8;
+    private static final int MAX_SIZE = 1024 * 16;
     private static final int MAX_HEADERS_SIZE = 1_024 * 12;
 
     private long headersPosition;
     private long dataPosition;
     private final Queue<AsyncBuffer> dataBuffers;
     private final Queue<AsyncBuffer> headersBuffers;
+    private final boolean background;
 
     private FileChannel channel;
     private String fileName;
     private int buffersAmount;
     private FileService fileService;
 
-    public BufferedWriter(String fileName, int buffersAmount, long headersPosition) {
+    public BufferedWriter(String fileName, int buffersAmount, long headersPosition, boolean background) {
         this.fileName = fileName;
         this.dataBuffers = new LinkedList<>();
         this.headersBuffers = new LinkedList<>();
@@ -31,6 +32,7 @@ public class BufferedWriter {
         this.buffersAmount = buffersAmount;
         this.dataPosition = 0;
         this.fileService = FileService.getInstance();
+        this.background = background;
     }
 
     public void openResources() {
@@ -84,7 +86,7 @@ public class BufferedWriter {
     private void writeNextBuffer(ByteBuffer filledBuffer, Queue<AsyncBuffer> buffers, long position) {
         filledBuffer.flip();
         AsyncBuffer asyncBuffer = new AsyncBuffer(filledBuffer, channel, position, false);
-        fileService.addWriteBuffer(asyncBuffer);
+        fileService.addBuffer(asyncBuffer, background);
         buffers.add(asyncBuffer);
     }
 
@@ -96,18 +98,12 @@ public class BufferedWriter {
         return getNextBuffer(dataBuffers);
     }
 
-    public static long wait;
-
     private ByteBuffer getNextBuffer(Queue<AsyncBuffer> buffers) {
         AsyncBuffer asyncBuffer = buffers.poll();
         synchronized (asyncBuffer) {
             while (!asyncBuffer.isCompleted()) {
                 try {
-                    long start = System.currentTimeMillis();
-                    FileService.LOGGER.debug("Wait next buffer for chunks");
                     asyncBuffer.wait();
-                    wait += System.currentTimeMillis() - start;
-                    FileService.LOGGER.debug("Got next buffer for chunks");
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -125,7 +121,6 @@ public class BufferedWriter {
         while (!headersBuffers.isEmpty()) {
             getNextBuffer(headersBuffers);
         }
-        System.out.println("Wait bufferedWrite to close: " + wait);
         try {
             if (channel != null) {
                 channel.close();

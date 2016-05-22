@@ -12,11 +12,11 @@ public class ChunksWriter {
     private ChunkHeader previous;
     private final BufferedWriter bufferedWriter;
 
-    public ChunksWriter(String fileName, long dataSize) {
+    public ChunksWriter(String fileName, long dataSize, boolean background) {
         this.headersAmount = 0;
         this.headersBuffered = 0;
         this.previous = new ChunkHeader(Integer.MAX_VALUE, Integer.MAX_VALUE, 0);
-        this.bufferedWriter = new BufferedWriter(fileName, 10, dataSize - 12);
+        this.bufferedWriter = new BufferedWriter(fileName, 15, dataSize - 12, background);
     }
 
     public void openResources() {
@@ -69,7 +69,7 @@ public class ChunksWriter {
     public void flush() {
         copyPreviousHeader();
         writeBufferedHeaders();
-        bufferedWriter.writeNextProcessBuffer(processBuffer);
+        flushData();
     }
 
     public void closeFile() {
@@ -78,5 +78,9 @@ public class ChunksWriter {
 
     public int getHeadersAmount() {
         return headersAmount;
+    }
+
+    protected void flushData() {
+        bufferedWriter.writeNextProcessBuffer(processBuffer);
     }
 }
