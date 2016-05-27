@@ -1,5 +1,6 @@
 package by.palaznik.codecomplete.controller;
 
+import by.palaznik.codecomplete.service.ChunksService;
 import by.palaznik.codecomplete.service.MemoryCheck;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.junit.Before;
@@ -30,13 +31,6 @@ public class ChunksServletTest {
 
     @Before
     public void setUp() throws Exception {
-        request = mock(HttpServletRequest.class);
-        response = mock(HttpServletResponse.class);
-
-        stringWriter = new StringWriter();
-        writer = new PrintWriter(stringWriter);
-        when(response.getWriter()).thenReturn(writer);
-
         memory = new MemoryCheck();
         thread = new Thread(memory);
         thread.start();
@@ -45,11 +39,16 @@ public class ChunksServletTest {
     @org.junit.Test
     @Ignore
     public void doPostOk() throws Exception {
+        request = mock(HttpServletRequest.class);
+        response = mock(HttpServletResponse.class);
         when(request.getParameter("num")).thenReturn("0");
         when(request.getParameter("checksum")).thenReturn("74b87337454200d4d33f80c4663dc5e5");
         when(request.getParameter("data")).thenReturn("YWFhYQ=="); // "aaaa"
         when(request.getParameter("isLast")).thenReturn("true");
 
+        stringWriter = new StringWriter();
+        writer = new PrintWriter(stringWriter);
+        when(response.getWriter()).thenReturn(writer);
         new ChunksServlet().doPost(request, response);
         writer.flush();
 
@@ -59,11 +58,16 @@ public class ChunksServletTest {
     @org.junit.Test
     @Ignore
     public void doPostRepeat() throws Exception {
+        request = mock(HttpServletRequest.class);
+        response = mock(HttpServletResponse.class);
         when(request.getParameter("num")).thenReturn("1");
         when(request.getParameter("checksum")).thenReturn("74b87337454200d4d33f80c4663dc5e5");
         when(request.getParameter("data")).thenReturn("YWFhYg=="); // "aaab"
         when(request.getParameter("isLast")).thenReturn("false");
 
+        stringWriter = new StringWriter();
+        writer = new PrintWriter(stringWriter);
+        when(response.getWriter()).thenReturn(writer);
         new ChunksServlet().doPost(request, response);
         writer.flush();
         assertTrue(stringWriter.toString().contains("REPEAT"));
@@ -72,7 +76,7 @@ public class ChunksServletTest {
     @Test
 //    @Ignore
     public void sendChunks() throws Exception {
-        testChunks(200_000, true);
+        testChunks(10_000, true);
     }
 
     private void testChunks(int amount, boolean shuffle) throws Exception {
@@ -86,6 +90,8 @@ public class ChunksServletTest {
         String line = getAlphabetLine().toString();
 
         for (int number : numbers) {
+            request = mock(HttpServletRequest.class);
+            response = mock(HttpServletResponse.class);
             when(request.getParameter("num")).thenReturn(String.valueOf(number));
 
             String data = number + line;
@@ -99,6 +105,9 @@ public class ChunksServletTest {
                 when(request.getParameter("isLast")).thenReturn("false");
             }
 
+            stringWriter = new StringWriter();
+            writer = new PrintWriter(stringWriter);
+            when(response.getWriter()).thenReturn(writer);
             servlet.doPost(request, response);
             writer.flush();
             assertTrue(stringWriter.toString().contains("OK"));
@@ -107,8 +116,10 @@ public class ChunksServletTest {
 
     public static StringBuilder getAlphabetLine() {
         StringBuilder line = new StringBuilder(" ");
-        for (int j = 0; j < 26; j++) {
-            line.append((char)('a' + j));
+        for (int i = 0; i < 1000; i++) {
+            for (int j = 0; j < 26; j++) {
+                line.append((char)('a' + j));
+            }
         }
         line.append("\r\n");
         return line;
@@ -146,7 +157,7 @@ public class ChunksServletTest {
     }
 
     private void testValues(int amount) {
-        try(BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream("merged.txt")))) {
+        try(BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(ChunksService.LOCATION + "result.txt")))) {
             String line;
             int i = 0;
             while ((line = reader.readLine()) != null ) {

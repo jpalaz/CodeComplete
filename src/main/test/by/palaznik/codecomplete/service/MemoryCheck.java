@@ -19,7 +19,6 @@ public class MemoryCheck implements Runnable {
             if (currentMemory > maxMemory) {
                 maxMemory = currentMemory;
             }
-            ChunksService.LOGGER.debug(currentMemory + " ");
         }
         ChunksService.LOGGER.debug("\nWorked: " + (System.currentTimeMillis() - start)
                 + "ms\nMax Memory: " + maxMemory);

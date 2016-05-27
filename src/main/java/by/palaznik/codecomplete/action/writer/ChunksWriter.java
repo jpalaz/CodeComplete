@@ -1,4 +1,6 @@
-package by.palaznik.codecomplete.model;
+package by.palaznik.codecomplete.action.writer;
+
+import by.palaznik.codecomplete.model.ChunkHeader;
 
 import java.nio.ByteBuffer;
 
@@ -15,8 +17,7 @@ public class ChunksWriter {
     public ChunksWriter(String fileName, long dataSize, boolean background) {
         this.headersAmount = 0;
         this.headersBuffered = 0;
-        this.previous = new ChunkHeader(Integer.MAX_VALUE, Integer.MAX_VALUE, 0);
-        this.bufferedWriter = new BufferedWriter(fileName, 15, dataSize - 12, background);
+        this.bufferedWriter = new BufferedWriter(fileName, 15, dataSize, background);
     }
 
     public void openResources() {
@@ -25,25 +26,29 @@ public class ChunksWriter {
         processBuffer = bufferedWriter.getNextProcessBuffer();
     }
 
+
     public void addHeader(ChunkHeader header) {
-        if (headersBuffer.remaining() == 0) {
-            writeBufferedHeaders();
-        }
         if (header.isNextTo(previous)) {
             int bytesAmount = previous.getBytesAmount() + header.getBytesAmount();
             header = new ChunkHeader(previous.getBeginNumber(), header.getEndNumber(), bytesAmount);
         } else {
-            headersAmount++;
-            headersBuffered++;
             copyPreviousHeader();
         }
         previous = header;
     }
 
     private void copyPreviousHeader() {
+        if (previous == null) {
+            return;
+        }
+        if (headersBuffer.remaining() == 0) {
+            writeBufferedHeaders();
+        }
         headersBuffer.putInt(previous.getBytesAmount());
         headersBuffer.putInt(previous.getBeginNumber());
         headersBuffer.putInt(previous.getEndNumber());
+        headersAmount++;
+        headersBuffered++;
     }
 
     private void writeBufferedHeaders() {

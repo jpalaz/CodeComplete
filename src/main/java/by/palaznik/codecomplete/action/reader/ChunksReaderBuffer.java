@@ -1,4 +1,8 @@
-package by.palaznik.codecomplete.model;
+package by.palaznik.codecomplete.action.reader;
+
+import by.palaznik.codecomplete.action.writer.ChunksWriter;
+import by.palaznik.codecomplete.model.Chunk;
+import by.palaznik.codecomplete.model.ChunkHeader;
 
 import java.nio.ByteBuffer;
 import java.util.*;

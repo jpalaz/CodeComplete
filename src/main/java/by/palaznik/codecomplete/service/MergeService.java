@@ -1,6 +1,9 @@
 package by.palaznik.codecomplete.service;
 
-import by.palaznik.codecomplete.model.*;
+import by.palaznik.codecomplete.action.reader.ChunksReader;
+import by.palaznik.codecomplete.action.reader.ChunksReaderFile;
+import by.palaznik.codecomplete.action.writer.ChunksWriter;
+import by.palaznik.codecomplete.action.writer.ChunksWriterFinal;
 
 import java.util.*;
 
@@ -12,7 +15,6 @@ public class MergeService implements Runnable {
     private ChunksReader[] forMerge;
     private Thread thread;
     private int fileNumber;
-    private boolean waiting;
     private int currentReader;
 
     private MergeService() {
@@ -21,7 +23,6 @@ public class MergeService implements Runnable {
         this.running = true;
         this.forMerge = new ChunksReader[2];
         this.fileNumber = 0;
-        this.waiting = false;
     }
 
     private static MergeService instance = null;
@@ -30,6 +31,7 @@ public class MergeService implements Runnable {
         if (instance == null) {
             instance = new MergeService();
             instance.thread = new Thread(instance);
+            instance.thread.setName("merge");
             instance.thread.start();
         }
         return instance;
@@ -38,19 +40,14 @@ public class MergeService implements Runnable {
     @Override
     public void run() {
         while (running) {
-            synchronized (this) {
-                while (chunksReaders.size() < 2) {
-                    waitMoreReadersForMerge();
-                }
-            }
             if (hasSameGenerations()) {
+                ChunksService.LOGGER.debug("Start merge");
                 ChunksReader reader = merge(forMerge[0], forMerge[1], "merge" + fileNumber++ + ".txt", true);
                 chunksReaders.add(currentReader, reader);
                 forMerge[0].deleteResources();
                 forMerge[1].deleteResources();
-            }
-            synchronized (this) {
-                while (waiting) {
+            } else {
+                synchronized (this) {
                     waitMoreReadersForMerge();
                 }
             }
@@ -59,7 +56,9 @@ public class MergeService implements Runnable {
 
     private void waitMoreReadersForMerge() {
         try {
+            ChunksService.LOGGER.debug("wait");
             wait();
+            ChunksService.LOGGER.debug("proceed");
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -67,7 +66,6 @@ public class MergeService implements Runnable {
 
     public void stop(List<ChunksReader> bufferReaders) {
         synchronized (this) {
-            this.waiting = false;
             this.running = false;
             this.notify();
         }
@@ -179,13 +177,6 @@ public class MergeService implements Runnable {
     public void add(ChunksReader reader) {
         synchronized (this) {
             chunksReaders.add(reader);
-            this.notify();
-        }
-    }
-
-    public void suspend(boolean waiting) {
-        synchronized (this) {
-            this.waiting = waiting;
             this.notify();
         }
     }

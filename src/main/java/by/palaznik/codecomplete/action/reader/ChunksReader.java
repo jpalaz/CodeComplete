@@ -1,4 +1,6 @@
-package by.palaznik.codecomplete.model;
+package by.palaznik.codecomplete.action.reader;
+
+import by.palaznik.codecomplete.action.writer.ChunksWriter;
 
 public interface ChunksReader extends Comparable<ChunksReader> {
 

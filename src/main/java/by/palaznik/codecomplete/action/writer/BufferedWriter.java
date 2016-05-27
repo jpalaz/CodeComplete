@@ -1,33 +1,32 @@
-package by.palaznik.codecomplete.model;
+package by.palaznik.codecomplete.action.writer;
 
+import by.palaznik.codecomplete.model.AsyncBuffer;
+import by.palaznik.codecomplete.service.ChunksService;
 import by.palaznik.codecomplete.service.FileService;
-import org.apache.commons.io.FileUtils;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.LinkedList;
 import java.util.Queue;
-import java.util.concurrent.Future;
 
-public class BufferedReader {
-    private static final int MAX_SIZE = 1_024 * 8;//1_048_576 * 4;
-    private static final int MAX_HEADERS_SIZE = 1_024 * 3;
+public class BufferedWriter {
+    private static final int MAX_SIZE = 1024 * 16;
+    private static final int MAX_HEADERS_SIZE = 1_024 * 12;
 
     private long headersPosition;
     private long dataPosition;
     private final Queue<AsyncBuffer> dataBuffers;
     private final Queue<AsyncBuffer> headersBuffers;
+    private final boolean background;
 
     private FileChannel channel;
     private String fileName;
     private int buffersAmount;
     private FileService fileService;
-    private final boolean background;
 
-    public BufferedReader(String fileName, int buffersAmount, long headersPosition, boolean background) {
+    public BufferedWriter(String fileName, int buffersAmount, long headersPosition, boolean background) {
         this.fileName = fileName;
         this.dataBuffers = new LinkedList<>();
         this.headersBuffers = new LinkedList<>();
@@ -45,7 +44,8 @@ public class BufferedReader {
 
     private void openChannel() {
         try {
-            channel = new RandomAccessFile(fileName, "r").getChannel();
+            channel = new RandomAccessFile(ChunksService.LOCATION + fileName, "rw").getChannel();
+            channel.truncate(0);
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -60,36 +60,34 @@ public class BufferedReader {
 
     private AsyncBuffer makeHeadersBuffer() {
         AsyncBuffer buffer = makeBuffer(MAX_HEADERS_SIZE, headersPosition);
-        headersPosition += MAX_HEADERS_SIZE;
+        buffer.setCompleted(true);
         return buffer;
     }
 
     private AsyncBuffer makeDataBuffer() {
         AsyncBuffer buffer = makeBuffer(MAX_SIZE, dataPosition);
-        dataPosition += MAX_SIZE;
+        buffer.setCompleted(true);
         return buffer;
     }
 
     private AsyncBuffer makeBuffer(int maxSize, long position) {
         ByteBuffer buffer = ByteBuffer.allocate(maxSize);
-        AsyncBuffer asyncBuffer = new AsyncBuffer(buffer, channel, position, true);
-        fileService.addBuffer(asyncBuffer, background);
-        return asyncBuffer;
+        return new AsyncBuffer(buffer, channel, position, false);
     }
 
-    public void readNextHeaderBuffer(ByteBuffer headersBuffer) {
-        readNextBuffer(headersBuffer, headersBuffers, headersPosition);
-        headersPosition += MAX_HEADERS_SIZE;
+    public void writeNextHeaderBuffer(ByteBuffer headersBuffer, int headersBuffered) {
+        writeNextBuffer(headersBuffer, headersBuffers, headersPosition);
+        headersPosition += 12 * headersBuffered;
     }
 
-    public void readNextProcessBuffer(ByteBuffer processBuffer) {
-        readNextBuffer(processBuffer, dataBuffers, dataPosition);
+    public void writeNextProcessBuffer(ByteBuffer processBuffer) {
+        writeNextBuffer(processBuffer, dataBuffers, dataPosition);
         dataPosition += MAX_SIZE;
     }
 
-    private void readNextBuffer(ByteBuffer filledBuffer, Queue<AsyncBuffer> buffers, long position) {
-        filledBuffer.clear();
-        AsyncBuffer asyncBuffer = new AsyncBuffer(filledBuffer, channel, position, true);
+    private void writeNextBuffer(ByteBuffer filledBuffer, Queue<AsyncBuffer> buffers, long position) {
+        filledBuffer.flip();
+        AsyncBuffer asyncBuffer = new AsyncBuffer(filledBuffer, channel, position, false);
         fileService.addBuffer(asyncBuffer, background);
         buffers.add(asyncBuffer);
     }
@@ -102,32 +100,23 @@ public class BufferedReader {
         return getNextBuffer(dataBuffers);
     }
 
-    public static long wait;
-
     private ByteBuffer getNextBuffer(Queue<AsyncBuffer> buffers) {
         AsyncBuffer asyncBuffer = buffers.poll();
-        try {
-            synchronized (asyncBuffer) {
-                long start = System.currentTimeMillis();
-                while (!asyncBuffer.isCompleted()) {
+        synchronized (asyncBuffer) {
+            while (!asyncBuffer.isCompleted()) {
+                try {
                     asyncBuffer.wait();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
-                wait += System.currentTimeMillis() - start;
             }
-        } catch (InterruptedException e) {
-            e.printStackTrace();
         }
         ByteBuffer buffer = asyncBuffer.getBuffer();
-        buffer.flip();
+        buffer.clear();
         return buffer;
     }
 
-    public void deleteResources() {
-        closeChannel();
-        FileUtils.deleteQuietly(new File(fileName));
-    }
-
-    private void closeChannel() {
+    public void closeChannel() {
         while (!dataBuffers.isEmpty()) {
             getNextBuffer(dataBuffers);
         }

@@ -29,6 +29,7 @@ public class ChunksServlet extends HttpServlet {
         if (ChunksService.checkHash(chunk, hash)) {
             ChunksService.setEndIfLast(chunk);
             ChunksService.addToBuffer(chunk);
+            ChunksService.tryToMakeResultFile();
             out.print("OK");
         } else {
             out.print("REPEAT");

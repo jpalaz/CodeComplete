@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Configuration status="WARN">
     <Appenders>
-        <RollingFile name="RollingFile" fileName="log/${date:yyyy-MM-dd}/log.txt"
-                     filePattern="log/${date:yyyy-MM-dd}/%d{yyyy-MM-dd}-%i.txt">
+        <RollingFile name="RollingFile" fileName="C:/Code Complete Palaznik Logs (DELETE it)/${date:yyyy-MM-dd}/log.txt"
+                     filePattern="C:/Code Complete Palaznik Logs (DELETE it)/${date:yyyy-MM-dd}/%d{yyyy-MM-dd}-%i.txt">
             <PatternLayout pattern="[%-5level] %d{HH:mm:ss.SSS} [%t] %c{5} %M - %msg%n"/>
             <Policies>
                 <TimeBasedTriggeringPolicy interval="1"/>
                 <SizeBasedTriggeringPolicy size="1 MB"/>
             </Policies>
-            <DefaultRolloverStrategy fileIndex="min" max="10"/>
+            <DefaultRolloverStrategy fileIndex="min" max="2"/>
         </RollingFile>
         <Console name="Console" target="SYSTEM_OUT">
             <PatternLayout pattern="[%-5level] %d{HH:mm:ss.SSS} [%t] %c{5} %M - %msg%n"/>
         </Console>
     </Appenders>
     <Loggers>
-        <Root level="debug">
+        <Root level="off">
             <AppenderRef ref="RollingFile"/>
         </Root>
     </Loggers>

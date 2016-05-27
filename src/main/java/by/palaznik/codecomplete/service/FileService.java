@@ -27,6 +27,7 @@ public class FileService implements Runnable {
             instance = new FileService();
             Thread thread = new Thread(instance);
             thread.start();
+            thread.setName("file");
             instance.setRunning(true);
         }
         lock.unlock();
@@ -53,11 +54,15 @@ public class FileService implements Runnable {
         while (!mainBuffers.isEmpty()) {
             processNextBuffer(mainBuffers);
         }
+        while (!mergeBuffers.isEmpty() && mainBuffers.isEmpty()) {
+            processNextBuffer(mergeBuffers);
+        }
         synchronized (this) {
-            while (!mergeBuffers.isEmpty() && mainBuffers.isEmpty()) {
-                processNextBuffer(mergeBuffers);
+            if (mergeBuffers.isEmpty() && mainBuffers.isEmpty()) {
+                ChunksService.LOGGER.debug("wait");
+                waitNextBuffers();
+                ChunksService.LOGGER.debug("proceed");
             }
-            waitNextBuffers();
         }
     }
 
@@ -104,5 +109,6 @@ public class FileService implements Runnable {
 
     public synchronized void setRunning(boolean running) {
         this.running = running;
+        this.notify();
     }
 }

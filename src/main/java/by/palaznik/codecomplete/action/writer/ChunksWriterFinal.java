@@ -1,10 +1,11 @@
-package by.palaznik.codecomplete.model;
+package by.palaznik.codecomplete.action.writer;
 
+import by.palaznik.codecomplete.model.ChunkHeader;
 import by.palaznik.codecomplete.service.FileService;
 
 public class ChunksWriterFinal extends ChunksWriter {
     public ChunksWriterFinal(long dataSize) {
-        super("merged.txt", dataSize, false);
+        super("result.txt", dataSize, false);
     }
 
     @Override

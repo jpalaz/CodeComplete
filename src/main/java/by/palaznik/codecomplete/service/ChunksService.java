@@ -1,11 +1,12 @@
 package by.palaznik.codecomplete.service;
 
 import by.palaznik.codecomplete.model.Chunk;
-import by.palaznik.codecomplete.model.ChunksReader;
-import by.palaznik.codecomplete.model.ChunksReaderBuffer;
+import by.palaznik.codecomplete.action.reader.ChunksReader;
+import by.palaznik.codecomplete.action.reader.ChunksReaderBuffer;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.logging.log4j.LogManager;
 
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,10 +16,11 @@ import java.util.List;
 public class ChunksService {
     public final static org.apache.logging.log4j.Logger LOGGER = LogManager.getLogger(FileService.class);
     private static Comparator<Chunk> chunkComparator = (Chunk first, Chunk second) -> first.getNumber() - second.getNumber();
-    private static final int MAX_SIZE = 1_048_576;
-    private static final int BUFFER_MAX_AMOUNT = 10000;
+    private static final int MAX_SIZE = 1_048_576 * 8;
+    private static final int BUFFER_MAX_AMOUNT = 100000;
+    public static final String LOCATION = System.getProperty("user.home") + File.separator;
 
-    private static List<Chunk> bufferedChunks = new ArrayList<>(BUFFER_MAX_AMOUNT);
+    private static List<Chunk> bufferedChunks = (new ArrayList<>(BUFFER_MAX_AMOUNT));
     private static List<ChunksReader> bufferReaders = new ArrayList<>();
 
     private static int fileNumber = 0;
@@ -37,22 +39,24 @@ public class ChunksService {
         }
     }
 
-    public static void addToBuffer(Chunk chunk) {
+    public static synchronized void addToBuffer(Chunk chunk) {
         bufferedChunks.add(chunk);
         dataSize += chunk.getData().length;
-        if (count % 10 == 0)
-            System.out.println(count + ", " + dataSize);
         count++;
-        boolean isEndOfChunks = (count - 1 == end);
         if (isFullBuffer() || bufferedChunks.size() == BUFFER_MAX_AMOUNT) {
             writeToBufferReader();
             dataSize = 0;
             bufferedChunks = new ArrayList<>(BUFFER_MAX_AMOUNT);
             mergeBuffersToFile();
-        } else if (isEndOfChunks) {
+        }
+    }
+
+    public static synchronized void tryToMakeResultFile() {
+        if (count - 1 == end) {
             writeToBufferReader();
             MergeService.getInstance().stop(bufferReaders);
-            count = 0;
+            System.out.println("File \"result.txt\" is ready at the HOME location." +
+                    " Server isn't usable now: singleton threads are finished.");
         }
     }
 
@@ -76,12 +80,10 @@ public class ChunksService {
 
     private static void mergeBuffersToFile() {
         if (bufferReaders.size() == 2) {
-            MergeService.getInstance().suspend(true);
             ChunksReader first = bufferReaders.get(0);
             ChunksReader second = bufferReaders.get(1);
             bufferReaders = new ArrayList<>(10);
             ChunksReader reader = MergeService.merge(first, second, fileNumber++ + ".txt", false);
-            MergeService.getInstance().suspend(false);
             MergeService.getInstance().add(reader);
             first.deleteResources();
             second.deleteResources();
